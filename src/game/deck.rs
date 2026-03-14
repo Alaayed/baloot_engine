@@ -1,4 +1,6 @@
-#[derive(Debug, Copy, Clone)]
+use rand::SeedableRng;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Suit {
     Hearts,
     Diamonds,
@@ -16,10 +18,12 @@ pub enum Rank {
     King,
     Ace,
 }
+#[derive(Debug, Copy, Clone)]
 pub struct Card {
     pub suit: Suit,
     pub rank: Rank,
 }
+#[derive(Debug, Clone)]
 pub struct Deck {
     pub cards: Vec<Card>
 }
@@ -56,5 +60,17 @@ impl Deck {
             }
         }
         return new_deck
+    }
+    pub fn inplace_shuffle(&mut self, seed: u64) {
+        // impl: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
+        // Ensures each permutation is equally likely.
+        use rand::rngs::StdRng;
+        use rand::RngExt;
+        let mut rng : StdRng= StdRng::seed_from_u64(seed);
+        for i in (1..self.cards.len()).rev() {
+            // uniform dist: [0, i]
+            let idx : usize  = RngExt::random_range(&mut rng,0..=i);
+            (&mut self.cards).swap(idx, i);
+        }
     }
 }
