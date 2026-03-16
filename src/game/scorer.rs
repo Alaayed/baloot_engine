@@ -6,11 +6,10 @@ use super::deck::Rank;
 // Scores Tricks, doesn't score projects.
 // Returns (team_tricks, other_team_tricks)
 pub fn score_tricks_points(team_tricks : Vec<Card>,
-                    trump_suit : Option<Suit>,
-                    has_bought : bool) -> (u64, u64) {
-    let trick_sum : u64 = team_tricks.iter().map(
-        |c : &Card| score_card(c, &trump_suit)
-    ).sum();
+                           trump_suit : Option<Suit>,
+                           has_bought : bool) -> (u64, u64) {
+    let func = |c: & Card| score_card(c, &trump_suit);
+    let trick_sum : u64 = team_tricks.iter().map(func).sum();
     let sun : u64= 132;
     let hokom: u64= 163;
     match &trump_suit {
@@ -30,7 +29,7 @@ pub fn score_tricks_points(team_tricks : Vec<Card>,
         }
     }
 }
-
+#[rustfmt::skip]
 pub fn score_card (card : &Card, trump_suit : &Option<Suit>) -> u64 {
     match trump_suit {
         Some(trump) if card.suit == *trump => {
@@ -104,7 +103,7 @@ mod tests {
             Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
             Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
             Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
-                                                          // 66
+            // 66
         ];
         // build a hand that sums to exactly 66...
         let result = score_tricks_points(tricks, None, true);

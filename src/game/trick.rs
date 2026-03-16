@@ -1,0 +1,232 @@
+use crate::game::deck::{Card, Rank, Suit};
+
+#[derive(Clone, Debug)]
+struct Trick {
+    cards: [Option<Card> ; 4],
+    start_player_index: usize,
+    current_player_index: usize,
+}
+impl Trick {
+    // allocates a new trick, reserves 4 cards for the trick
+    fn new(starting_player : usize) -> Trick {
+        Trick {
+            cards : [None, None, None, None],
+            start_player_index: starting_player,
+            current_player_index: starting_player,
+        }
+    }
+    fn push(&mut self, card: Card) {
+        if self.cards[self.current_player_index].is_some() {
+            panic!("Trick already full");
+
+        }
+        // Create a circular buffer
+        self.cards[self.current_player_index] = Some(card);
+        self.current_player_index += 1;
+        self.current_player_index %= 4;
+
+    }
+    // Returns the winner of the trick
+    fn winner(&self, tsuit : Option<&Suit> ) -> Option<u64> {
+        if self.cards.iter().any(|card| card.is_none()) {
+            print!("Trick in progress, winner has not been decided.");
+            return None;
+        }
+        let mut cur_max = 0;
+        let mut cur_idx: u64 = 0;
+        for i in 0..4 {
+            let cur_score = card_trick_score(& (self.cards[i].as_ref().unwrap()), tsuit);
+            if cur_score > cur_max {
+                cur_max = cur_score;
+                cur_idx = i as u64;
+            }
+        }
+        Some(cur_idx)
+    }
+}
+
+fn card_trick_score(card: &Card, trump_suit: Option<&Suit>) -> u64 {
+
+    match trump_suit {
+        Some(trump) if card.suit == *trump => {
+            match card.rank {
+                Rank::Jack  => 16,
+                Rank::Nine  => 15,
+                Rank::Ace   => 14,
+                Rank::Ten   => 13,
+                Rank::King  => 12,
+                Rank::Queen => 11,
+                Rank::Eight => 10,
+                Rank::Seven => 9,
+            }
+        }
+        _ => { // Sun
+            match card.rank {
+                Rank::Ace   => 8,
+                Rank::Ten   => 7,
+                Rank::King  => 6,
+                Rank::Queen => 5,
+                Rank::Jack  => 4,
+                Rank::Nine  => 3,
+                Rank::Eight => 2,
+                Rank::Seven => 1,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card(suit: Suit, rank: Rank) -> Card {
+        Card { suit, rank }
+    }
+
+    // --- card_trick_score ---
+
+    #[test]
+    fn trump_jack_is_highest() {
+        let score = card_trick_score(&card(Suit::Hearts, Rank::Jack), Some(&Suit::Hearts));
+        assert_eq!(score, 16);
+    }
+
+    #[test]
+    fn trump_nine_beats_trump_ace() {
+        let nine  = card_trick_score(&card(Suit::Hearts, Rank::Nine), Some(&Suit::Hearts));
+        let ace   = card_trick_score(&card(Suit::Hearts, Rank::Ace),  Some(&Suit::Hearts));
+        assert!(nine > ace);
+    }
+
+    #[test]
+    fn trump_order() {
+        let trump = Some(&Suit::Spades);
+        let s = |r| card_trick_score(&card(Suit::Spades, r), trump);
+        assert!(s(Rank::Jack) > s(Rank::Nine));
+        assert!(s(Rank::Nine) > s(Rank::Ace));
+        assert!(s(Rank::Ace)  > s(Rank::Ten));
+        assert!(s(Rank::Ten)  > s(Rank::King));
+        assert!(s(Rank::King) > s(Rank::Queen));
+        assert!(s(Rank::Queen)> s(Rank::Eight));
+        assert!(s(Rank::Eight)> s(Rank::Seven));
+    }
+
+    #[test]
+    fn non_trump_order() {
+        let trump = Some(&Suit::Clubs);
+        let s = |r| card_trick_score(&card(Suit::Hearts, r), trump);
+        assert!(s(Rank::Ace)  > s(Rank::Ten));
+        assert!(s(Rank::Ten)  > s(Rank::King));
+        assert!(s(Rank::King) > s(Rank::Queen));
+        assert!(s(Rank::Queen)> s(Rank::Jack));
+        assert!(s(Rank::Jack) > s(Rank::Nine));
+        assert!(s(Rank::Nine) > s(Rank::Eight));
+        assert!(s(Rank::Eight)> s(Rank::Seven));
+    }
+
+    #[test]
+    fn trump_beats_non_trump_ace() {
+        let trump = Some(&Suit::Diamonds);
+        let trump_seven = card_trick_score(&card(Suit::Diamonds, Rank::Seven), trump);
+        let off_ace     = card_trick_score(&card(Suit::Hearts,   Rank::Ace),   trump);
+        assert!(trump_seven > off_ace);
+    }
+
+    #[test]
+    fn no_trump_all_suits_use_sun_ranking() {
+        let ace_hearts   = card_trick_score(&card(Suit::Hearts,   Rank::Ace), None);
+        let ace_spades   = card_trick_score(&card(Suit::Spades,   Rank::Ace), None);
+        let seven_hearts = card_trick_score(&card(Suit::Hearts,   Rank::Seven), None);
+        assert_eq!(ace_hearts, ace_spades);
+        assert!(ace_hearts > seven_hearts);
+    }
+
+    // --- Trick::new ---
+
+    #[test]
+    fn new_trick_starts_at_given_player() {
+        let trick = Trick::new(2);
+        assert_eq!(trick.start_player_index, 2);
+        assert_eq!(trick.current_player_index, 2);
+        assert!(trick.cards.iter().all(|c| c.is_none()));
+    }
+
+    // --- Trick::push ---
+
+    #[test]
+    fn push_fills_slots_in_circular_order() {
+        let mut trick = Trick::new(2);
+        trick.push(card(Suit::Hearts, Rank::Seven));   // slot 2
+        trick.push(card(Suit::Hearts, Rank::Eight));   // slot 3
+        trick.push(card(Suit::Hearts, Rank::Nine));    // slot 0
+        trick.push(card(Suit::Hearts, Rank::Ten));     // slot 1
+
+        assert!(trick.cards[2].is_some());
+        assert!(trick.cards[3].is_some());
+        assert!(trick.cards[0].is_some());
+        assert!(trick.cards[1].is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "Trick already full")]
+    fn push_panics_when_full() {
+        let mut trick = Trick::new(0);
+        for _ in 0..5 {
+            trick.push(card(Suit::Hearts, Rank::Seven));
+        }
+    }
+
+    // --- Trick::winner ---
+
+    #[test]
+    fn winner_returns_none_when_incomplete() {
+        let mut trick = Trick::new(0);
+        trick.push(card(Suit::Hearts, Rank::Ace));
+        trick.push(card(Suit::Hearts, Rank::King));
+        assert!(trick.winner(None).is_none());
+    }
+
+    #[test]
+    fn winner_no_trump_highest_ace_wins() {
+        // player 0: Ace, 1: King, 2: Queen, 3: Jack
+        let mut trick = Trick::new(0);
+        trick.push(card(Suit::Hearts,   Rank::Ace));
+        trick.push(card(Suit::Diamonds, Rank::King));
+        trick.push(card(Suit::Clubs,    Rank::Queen));
+        trick.push(card(Suit::Spades,   Rank::Jack));
+        assert_eq!(trick.winner(None), Some(0));
+    }
+
+    #[test]
+    fn winner_trump_jack_beats_all() {
+        // player 0: trump Jack, 1: off-suit Ace, 2: off-suit Ace, 3: trump Nine
+        let mut trick = Trick::new(0);
+        trick.push(card(Suit::Spades, Rank::Jack));   // slot 0 — trump Jack (score 16)
+        trick.push(card(Suit::Hearts, Rank::Ace));    // slot 1 — off-suit Ace (score 8)
+        trick.push(card(Suit::Clubs,  Rank::Ace));    // slot 2 — off-suit Ace (score 8)
+        trick.push(card(Suit::Spades, Rank::Nine));   // slot 3 — trump Nine (score 15)
+        assert_eq!(trick.winner(Some(&Suit::Spades)), Some(0));
+    }
+
+    #[test]
+    fn winner_trump_nine_beats_non_trump_ace() {
+        // player 0: off-suit Ace, 1: trump Nine, 2: off-suit King, 3: off-suit Queen
+        let mut trick = Trick::new(0);
+        trick.push(card(Suit::Hearts,   Rank::Ace));
+        trick.push(card(Suit::Diamonds, Rank::Nine));
+        trick.push(card(Suit::Clubs,    Rank::King));
+        trick.push(card(Suit::Hearts,   Rank::Queen));
+        assert_eq!(trick.winner(Some(&Suit::Diamonds)), Some(1));
+    }
+
+    #[test]
+    fn winner_with_non_zero_start_player() {
+        // starting player 3, push order: slot3, slot0, slot1, slot2
+        let mut trick = Trick::new(3);
+        trick.push(card(Suit::Hearts, Rank::Seven));  // slot 3
+        trick.push(card(Suit::Hearts, Rank::Ace));    // slot 0 — highest
+        trick.push(card(Suit::Hearts, Rank::King));   // slot 1
+        trick.push(card(Suit::Hearts, Rank::Queen));  // slot 2
+        assert_eq!(trick.winner(None), Some(0));
+    }
+}
