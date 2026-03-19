@@ -27,6 +27,14 @@ pub struct Card {
 pub struct Deck {
     pub cards: Vec<Card>
 }
+pub fn distribute_hands_from_shuffled_deck(mut deck : Deck) -> [Vec<Card> ; 4]{
+    let c = & mut deck.cards;
+    let p1 : Vec<Card> =c.drain(..8).collect();
+    let p2 : Vec<Card> =c.drain(..8).collect();
+    let p3 : Vec<Card> =c.drain(..8).collect();
+    let p4 : Vec<Card> =c.drain(..8).collect();
+    [p1,p2,p3,p4]
+}
 impl Deck {
     pub fn new() -> Deck {
         // Create a deck of cards

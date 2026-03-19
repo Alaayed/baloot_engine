@@ -8,7 +8,7 @@ use super::deck::Rank;
 pub fn score_tricks_points(team_tricks : Vec<Card>,
                            trump_suit : Option<Suit>,
                            has_bought : bool) -> (u64, u64) {
-    let func = |c: & Card| score_card(c, &trump_suit);
+    let func = |c: & Card| card_score(c, &trump_suit);
     let trick_sum : u64 = team_tricks.iter().map(func).sum();
     let sun : u64= 132;
     let hokom: u64= 163;
@@ -30,7 +30,7 @@ pub fn score_tricks_points(team_tricks : Vec<Card>,
     }
 }
 #[rustfmt::skip]
-pub fn score_card (card : &Card, trump_suit : &Option<Suit>) -> u64 {
+pub fn card_score (card : &Card, trump_suit : &Option<Suit>) -> u64 {
     match trump_suit {
         Some(trump) if card.suit == *trump => {
             match card.rank {
@@ -63,23 +63,23 @@ mod tests {
     #[test]
     fn test_score_card_trump_jack() {
         let card = Card { suit: Suit::Hearts, rank: Rank::Jack };
-        assert_eq!(score_card(&card, &Some(Suit::Hearts)), 20);
+        assert_eq!(card_score(&card, &Some(Suit::Hearts)), 20);
     }
     #[test]
     fn test_score_card_trump_nine() {
         let card = Card { suit: Suit::Hearts, rank: Rank::Nine };
-        assert_eq!(score_card(&card, &Some(Suit::Hearts)), 14);
+        assert_eq!(card_score(&card, &Some(Suit::Hearts)), 14);
     }
     #[test]
     fn test_score_card_non_trump_jack() {
         let card = Card { suit: Suit::Hearts, rank: Rank::Jack };
-        assert_eq!(score_card(&card, &Some(Suit::Spades)), 3);
+        assert_eq!(card_score(&card, &Some(Suit::Spades)), 3);
     }
 
     #[test]
     fn test_score_card_no_trump() {
         let card = Card { suit: Suit::Hearts, rank: Rank::Ace };
-        assert_eq!(score_card(&card, &None), 11);
+        assert_eq!(card_score(&card, &None), 11);
     }
 
     #[test]
