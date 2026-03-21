@@ -5,17 +5,19 @@ use crate::game::trick::card_strength;
 // R1: Must play suit if you have it, otherwise anything else.
 // Hokoom
 // R1: Must always play above a trump if possible.
+#[derive(Debug, Clone)]
 pub struct GameState {
-    // Card meta data
-    pub hands : [Vec<Card> ; 4],
-    pub current_trick : Vec<Card>,
     // Game meta data
     pub previous_tricks : Vec<[Card ; 4]>,
     pub trump_suit : Option <Suit>,
-    pub in_trick : bool,
     // Trick meta data
     pub current_player : u64,
+    pub in_trick : bool,
     pub current_suit : Option <Suit>,
+    // Card meta data
+    pub hands : [Vec<Card> ; 4],
+    pub current_trick : Vec<Card>,
+
 }
 
 impl GameState {
@@ -65,7 +67,7 @@ impl GameState {
         if !self.in_trick { // First move of the trick
             return vec![true ; n];
         }
-
+        // TODO: Store enemy played and enemy strongest, friend etc since state persists
         let trick_length  =self.current_trick.len();
         let player_cards = &self.hands[player];
         // all enemy related
@@ -137,7 +139,26 @@ impl GameState {
             }
         }
     }
-    pub fn apply(&self, action: Card) -> Result<GameState, &str> { todo!() }
+    pub fn apply(&self, player : usize, card_idx: usize) -> Result<GameState, &str> {
+        let mut new_state : GameState = (*self).clone();
+        if !self.in_trick {
+            // Player inits trick
+            new_state.in_trick = true;
+            // Remove card from player
+            let removed_card : Card = new_state.hands[player].swap_remove(card_idx);
+            new_state.current_suit = Some(removed_card.suit);
+            // Add removed card to trick
+            new_state.current_trick.push(removed_card);
+            // inc current  player
+            new_state.current_player+=1;
+            new_state.current_player%=4;
+        }
+
+        if new_state.current_trick.len() == 4 { // Trick completed
+            new_state.previous_tricks.append(new_state.current_trick.try_into().expect())
+        }
+        todo!()
+    }
     pub fn is_terminal(&self) -> Option<(u64, u64)> { todo!() }
     // TODO: implement early termination if sufficient points collected.
 }

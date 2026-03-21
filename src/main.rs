@@ -1,5 +1,6 @@
 
-mod game;
+pub mod game;
 fn main() {
-    println!("Hello, world!");
+    let deck = game::deck::Deck::new();
+    dbg!(deck);
 }

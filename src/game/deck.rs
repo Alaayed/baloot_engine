@@ -68,7 +68,7 @@ impl Deck {
             }
         }
         return new_deck
-    }
+}
     pub fn inplace_shuffle(&mut self, seed: u64) {
         // impl: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
         // Ensures each permutation is equally likely.
