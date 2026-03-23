@@ -1,22 +1,27 @@
 use crate::game::deck::{distribute_hands_from_shuffled_deck, Card, Deck,Suit};
-use crate::game::trick::card_strength;
+use crate::game::trick::{card_strength,Trick};
 
 // Sun rules
 // R1: Must play suit if you have it, otherwise anything else.
 // Hokoom
 // R1: Must always play above a trump if possible.
+pub fn get_new_hand(seed : u64) {
+
+}
 #[derive(Debug, Clone)]
 pub struct GameState {
     // Game meta data
-    pub previous_tricks : Vec<[Card ; 4]>,
+    pub previous_tricks : Vec<Trick>,
+    pub who_bought : usize,
     pub trump_suit : Option <Suit>,
+    pub seed : u64,
     // Trick meta data
-    pub current_player : u64,
+    pub current_player : usize,
     pub in_trick : bool,
     pub current_suit : Option <Suit>,
     // Card meta data
     pub hands : [Vec<Card> ; 4],
-    pub current_trick : Vec<Card>,
+    pub current_trick : Trick,
 
 }
 
@@ -24,7 +29,7 @@ impl GameState {
     pub fn new(
         hands : Option <[Vec<Card> ; 4]>,
         trump_suit : Option <Suit>,
-        current_player : Option <u64>,
+        current_player : Option <usize>,
         seed : Option<u64>
     ) -> GameState {
         use crate::game::deck::{Card, };
@@ -32,12 +37,14 @@ impl GameState {
             Some(hands) => {
                 GameState {
                     hands : hands,
-                    current_trick : Vec::<Card>::new(),
+                    current_trick : Trick::new(0),
                     previous_tricks : Vec::new(),
+                    who_bought: 0,
                     trump_suit : trump_suit,
                     in_trick : false,
                     current_player : match current_player {Some(c) => c,_=>0},
                     current_suit : None,
+                    seed : 42,
                 }
             }
             _ => { // Manufacture a game
@@ -51,16 +58,25 @@ impl GameState {
                 let current_player = match current_player {Some(p) => p, None => 0};
                 GameState {
                     hands: hands,
-                    current_trick : Vec::<Card>::new(),
+                    current_trick : Trick::new(0),
                     previous_tricks : Vec::new(),
+                    who_bought: 0,
                     trump_suit : trump_suit,
                     in_trick : false,
                     current_player : current_player,
                     current_suit : None,
+                    seed : seed.unwrap_or_else(|| 42),
                 }
 
             }
         }
+    }
+    pub fn get_new_hand(&mut self) -> [Vec<Card>; 4] {
+        let seed = self.seed;
+        self.seed +=1;
+        let mut deck = Deck::new();
+        deck.inplace_shuffle(seed);
+        distribute_hands_from_shuffled_deck(deck)
     }
     pub fn legal_moves (&self, player : usize) -> Vec<bool> {
         let n = self.hands[player].len();
@@ -75,26 +91,19 @@ impl GameState {
         // len == 2, enemy = {1}  , friend {0}
         // len == 1, enemy = {0}
         let enemy_team = (trick_length+1) % 2;
-        let enemy_played : Vec::<Card> = self.current_trick
-            .iter()
-            .enumerate() // (index, card)
-            .filter (|(idx, _)| idx % 2 == enemy_team)// Keep enemy cards
-            .map(|(_, card)| *card) // remove indices
-            .collect();
+        let enemy_played : Vec::<Card> = self.current_trick.get_enemy_cards(player);
         let enemy_strongest : u64 = enemy_played
             .iter()
             .map(|c| card_strength(c, self.trump_suit))
             .max()
             .unwrap();
         // teammate related
-        let friend_card =
-            if trick_length > 1
-            {Some(self.current_trick[trick_length-2])}
-            else {None};
+        let friend_card = self.current_trick.get_friend_card(player);
         let friend_won  = friend_card
             .map_or(false, |f| card_strength(&f, self.trump_suit)  > enemy_strongest);
         // All suit related
-        let trick_suit= self.current_trick[0].suit;
+        let trick_suit= self.current_suit.expect("In trick, but no trick suit? \
+        Check apply function for proper init of trick");
         let has_suit  = player_cards.iter().any(|c| c.suit == trick_suit);
         let suit_mask      =  player_cards.iter().map(|c| c.suit == trick_suit).collect();
         let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit)).collect();
@@ -139,27 +148,30 @@ impl GameState {
             }
         }
     }
-    pub fn apply(&self, player : usize, card_idx: usize) -> Result<GameState, &str> {
+    pub fn apply(&self, player :usize , card_idx: usize) -> Result<GameState, &str> {
         let mut new_state : GameState = (*self).clone();
-        if !self.in_trick {
-            // Player inits trick
+        if !new_state.in_trick {
+            // Player just started a new trick
+            // Don't clean up prev state, other codes problem, assume clean state
             new_state.in_trick = true;
-            // Remove card from player
-            let removed_card : Card = new_state.hands[player].swap_remove(card_idx);
-            new_state.current_suit = Some(removed_card.suit);
-            // Add removed card to trick
-            new_state.current_trick.push(removed_card);
-            // inc current  player
-            new_state.current_player+=1;
-            new_state.current_player%=4;
+            // What should
+            // 1. Remove the card and add it to NEW trick
+            let removed_card = new_state.hands[player].swap_remove(card_idx);
+            new_state.current_trick = Trick::new(player);
+            // 2. Specify current suit
+            new_state.current_suit = Some(removed_card.suit)
         }
-
-        if new_state.current_trick.len() == 4 { // Trick completed
-            new_state.previous_tricks.append(new_state.current_trick.try_into().expect())
-        }
+        // if new_state.hands.iter().all(|h | h.is_empty()) {
+        //     // final trick has been played, assign new cards
+        //     new_state.hands = new_state.get_new_hand();
+        // }
         todo!()
     }
-    pub fn is_terminal(&self) -> Option<(u64, u64)> { todo!() }
+    pub fn is_terminal(&self) -> Option<(u64, u64)> {
+
+        todo!()
+    }
+
     // TODO: implement early termination if sufficient points collected.
 }
 
@@ -189,13 +201,15 @@ mod tests {
         in_trick: bool,
     ) -> GameState {
         GameState {
+            who_bought : 0,
             hands: [hand, vec![], vec![], vec![]],
-            current_trick: trick,
+            current_trick: Trick::new(0),
             previous_tricks: vec![],
             trump_suit: trump,
             in_trick,
             current_player: 0,
             current_suit: None,
+            seed: 42
         }
     }
 

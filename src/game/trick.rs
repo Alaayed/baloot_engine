@@ -1,21 +1,21 @@
 use crate::game::deck::{Card, Rank, Suit};
 
 #[derive(Clone, Debug)]
-struct Trick {
+pub struct Trick {
     cards: [Option<Card> ; 4],
     start_player_index: usize,
     current_player_index: usize,
 }
 impl Trick {
     // allocates a new trick, reserves 4 cards for the trick
-    fn new(starting_player : usize) -> Trick {
+    pub fn new(starting_player : usize) -> Trick {
         Trick {
             cards : [None, None, None, None],
             start_player_index: starting_player,
             current_player_index: starting_player,
         }
     }
-    fn push(&mut self, card: Card) {
+    pub fn push(&mut self, card: Card) {
         if self.cards[self.current_player_index].is_some() {
             panic!("Trick already full");
 
@@ -27,7 +27,7 @@ impl Trick {
 
     }
     // Returns the winner of the trick
-    fn winner(&self, tsuit : Option<Suit> ) -> Option<u64> {
+    pub fn winner(&self, tsuit : Option<Suit> ) -> Option<u64> {
         if self.cards.iter().any(|card| card.is_none()) {
             print!("Trick in progress, winner has not been decided.");
             return None;
@@ -43,6 +43,21 @@ impl Trick {
         }
         Some(cur_idx)
     }
+    pub fn len(&self) -> usize
+    { self.cards.iter().map(|c| if c.is_some() {1} else {0}).sum()}
+    pub fn get_enemy_cards(&self, player : usize) -> Vec::<Card> {
+        let enemy_team = (player+1) % 2;
+        self.cards
+            .iter()
+            .enumerate() // (index, card)
+            .filter (|(idx,_ )| idx % 2 == enemy_team)// Keep enemy cards
+            .filter_map(|(_, card)| *card) // remove indices
+            .collect()
+    }
+    pub fn get_friend_card(&self, player : usize) -> Option<Card> {
+        self.cards[(player+2) % 4]
+    }
+
 }
 
 pub fn card_strength(card: &Card, trump_suit: Option<Suit>) -> u64 {
