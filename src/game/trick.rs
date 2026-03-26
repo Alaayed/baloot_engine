@@ -2,10 +2,17 @@ use crate::game::deck::{Card, Rank, Suit};
 
 #[derive(Clone, Debug)]
 pub struct Trick {
-    cards: [Option<Card> ; 4],
+    pub(crate) cards: [Option<Card> ; 4],
     start_player_index: usize,
     current_player_index: usize,
+    suit : Option<Suit>,
+    trump : Option<Suit>,
+    winner: i64,
 }
+// Maintains a trick based on absolute played indices
+// i.e., if player 1 starts a trick and player 2 starts another later
+// player 1's card played should be in position 0 in both tricks
+// (Assuming starting position is correct)
 impl Trick {
     // allocates a new trick, reserves 4 cards for the trick
     pub fn new(starting_player : usize) -> Trick {
@@ -13,12 +20,22 @@ impl Trick {
             cards : [None, None, None, None],
             start_player_index: starting_player,
             current_player_index: starting_player,
+            winner : -1,
+            suit: None,
+            trump: None,
         }
     }
+    pub fn set_player(&mut self, player : usize) {
+        self.current_player_index = player;
+        self.start_player_index = player;
+    }
+    pub fn set_suit(&mut self, suit : Suit) {
+        self.suit = Some(suit);
+    }
+    pub fn set_trump(&mut self, trump : Suit) {}
     pub fn push(&mut self, card: Card) {
         if self.cards[self.current_player_index].is_some() {
             panic!("Trick already full");
-
         }
         // Create a circular buffer
         self.cards[self.current_player_index] = Some(card);
@@ -26,8 +43,14 @@ impl Trick {
         self.current_player_index %= 4;
 
     }
+    pub fn convert_to_vec(&self) -> Vec::<Card> {
+        self.cards
+            .map(|c| c.expect("Trick converted before all cards evalutated"))
+            .to_vec()
+    }
     // Returns the winner of the trick
-    pub fn winner(&self, tsuit : Option<Suit> ) -> Option<u64> {
+    pub fn winner(&mut self, tsuit : Option<Suit> ) -> Option<u64> {
+        if self.winner != -1 {return Some(self.winner as u64)}
         if self.cards.iter().any(|card| card.is_none()) {
             print!("Trick in progress, winner has not been decided.");
             return None;
@@ -41,7 +64,8 @@ impl Trick {
                 cur_idx = i as u64;
             }
         }
-        Some(cur_idx)
+        self.winner = (cur_idx % 2) as i64;
+        Some(self.winner as u64)
     }
     pub fn len(&self) -> usize
     { self.cards.iter().map(|c| if c.is_some() {1} else {0}).sum()}
