@@ -6,7 +6,7 @@ use super::trick::{card_strength, Trick};
 
 // Scores Tricks, doesn't score projects.
 // Returns (team_tricks, other_team_tricks)
-pub fn score_tricks_points(all_tricks : Vec<Trick>,
+pub fn score_tricks_points(all_tricks : &Vec<Trick>,
                            trump_suit : Option<Suit>,
                            bidding_team: u64,
                            bidding_team_projects : u64,
@@ -29,7 +29,7 @@ pub fn score_tricks_points(all_tricks : Vec<Trick>,
     let mut other_team_score = other_team_projects + other_trick_score;
     let mut bidding_team_score = bidding_team_projects + bidding_trick_score;
     match trump_suit {
-        Some(t) => {
+        Some(_) => {
             if other_team_score > hokom / 2 { // Won over half points
                 other_team_score = hokom;
                 bidding_team_score = 0;

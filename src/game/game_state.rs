@@ -14,7 +14,7 @@ pub struct GameState {
     pub previous_tricks : Vec<Trick>,
     pub seed : u64,
     // Bid meta data
-    pub who_bought : usize,
+    pub bidding_team: usize,
     pub trump_suit : Option<Suit>,
     // Trick meta data
     pub current_player : usize,
@@ -22,7 +22,8 @@ pub struct GameState {
     pub current_suit : Option <Suit>,
     pub hands : [Vec<Card> ; 4],
     pub current_trick : Trick,
-
+    pub bidding_team_projects : u64,
+    pub other_team_projects : u64,
 }
 
 impl GameState {
@@ -38,12 +39,14 @@ impl GameState {
                     hands,
                     current_trick : Trick::new(0),
                     previous_tricks : Vec::new(),
-                    who_bought: 0,
+                    bidding_team: 0,
                     trump_suit,
                     in_trick : false,
                     current_player : match current_player {Some(c) => c,_=>0},
                     current_suit : None,
                     seed : 42,
+                    bidding_team_projects : 0,
+                    other_team_projects : 0,
                 }
             }
             _ => { // Manufacture a game
@@ -59,12 +62,14 @@ impl GameState {
                     hands,
                     current_trick : Trick::new(0),
                     previous_tricks : Vec::new(),
-                    who_bought: 0,
+                    bidding_team: 0,
                     trump_suit,
                     in_trick : false,
                     current_player,
                     current_suit : None,
                     seed : seed.unwrap_or_else(|| 42),
+                    bidding_team_projects : 0,
+                    other_team_projects : 0,
                 }
 
             }
@@ -181,8 +186,23 @@ impl GameState {
         Ok(new_state)
     }
     pub fn is_terminal(&self) -> Option<(u64, u64)> {
-        
-        todo!()
+        let current = scorer::score_tricks_points(
+            &self.previous_tricks,
+            self.trump_suit,
+            self.bidding_team as u64,
+            0,
+            0,
+        );
+        let sun = 130;
+        let hokom = 162;
+        let projects = self.other_team_projects + self.bidding_team_projects;
+        let finished = current.0 + current.1 == (sun+projects)
+            || current.0 + current.1 == (hokom+projects);
+        if finished {
+            Some(current)
+        } else {
+            None
+        }
     }
 
     // TODO: implement early termination if sufficient points collected.
@@ -214,7 +234,7 @@ mod tests {
         in_trick: bool,
     ) -> GameState {
         GameState {
-            who_bought : 0,
+            bidding_team: 0,
             hands: [hand, vec![], vec![], vec![]],
             current_trick: Trick::new(0),
             previous_tricks: vec![],
@@ -222,7 +242,9 @@ mod tests {
             in_trick,
             current_player: 0,
             current_suit: None,
-            seed: 42
+            seed: 42,
+            other_team_projects: 0,
+            bidding_team_projects : 0
         }
     }
 
