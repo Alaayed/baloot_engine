@@ -14,12 +14,12 @@ pub fn score_tricks_points(all_tricks : &Vec<Trick>,
     let err_msg = "Incomplete trick passed to score_tricks_points(), major error.";
     let bidding_trick_score: u64 = all_tricks
         .iter()
-        .filter(| t| t.get_winner().expect(err_msg) == bidding_team)
+        .filter(| t| t.get_winner().expect(err_msg) % 2 == bidding_team)
         .map(|t| score_trick(t , trump_suit))
         .sum();
     let other_trick_score: u64 = all_tricks
         .iter()
-        .filter(| t| t.get_winner().expect(err_msg) == (bidding_team +1)%2)
+        .filter(| t| t.get_winner().expect(err_msg) % 2 == (bidding_team +1)%2)
         .map(|t| score_trick(t , trump_suit))
         .sum();
     // Sun / Hokom + all projects

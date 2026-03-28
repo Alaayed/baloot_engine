@@ -1,5 +1,5 @@
 use crate::game::deck::{Card, Rank, Suit};
-
+use std::fmt;
 #[derive(Clone, Debug)]
 pub struct Trick {
     pub(crate) cards: [Option<Card> ; 4],
@@ -13,6 +13,22 @@ pub struct Trick {
 // i.e., if player 1 starts a trick and player 2 starts another later
 // player 1's card played should be in position 0 in both tricks
 // (Assuming starting position is correct)
+impl fmt::Display for Trick {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Trick [start: P{}] ", self.start_player_index)?;
+        for (i, card) in self.cards.iter().enumerate() {
+            let player =i ;
+            match card {
+                Some(c) => write!(f, "P{}: {} ", player, c)?,
+                None    => write!(f, "P{}: -- ", player)?,
+            }
+        }
+        if self.winner >= 0 {
+            write!(f, "| winner: P{}", self.winner)?;
+        }
+        Ok(())
+    }
+}
 impl Trick {
     // allocates a new trick, reserves 4 cards for the trick
     pub fn new(starting_player : usize) -> Trick {
@@ -32,7 +48,7 @@ impl Trick {
     pub fn set_suit(&mut self, suit : Suit) {
         self.suit = Some(suit);
     }
-    pub fn set_trump(&mut self, trump : Suit) {}
+    pub fn set_trump(&mut self, trump : Suit) { self.trump = Some(trump); }
     pub fn push(&mut self, card: Card) {
         if self.cards[self.current_player_index].is_some() {
             panic!("Trick already full");
@@ -51,9 +67,11 @@ impl Trick {
     // Returns the winner of the trick
     pub fn get_winner(&self) -> Option<u64> {
         if self.winner != -1 { Some(self.winner as u64) }
-        else { None }
+        else {
+            None
+        }
     }
-    fn compute_winner(&mut self, tsuit: Option<Suit>) -> Result<(), &'static str> {
+    pub fn compute_winner(&mut self, tsuit: Option<Suit>) -> Result<(), &'static str> {
         if self.cards.iter().any(|card| card.is_none()) {
             return Err("Trick in progress, winner has not been decided.");
         }
@@ -68,7 +86,7 @@ impl Trick {
             }
         }
 
-        self.winner = (cur_idx % 2) as i64;
+        self.winner = (cur_idx) as i64;
         Ok(())
     }
     pub fn len(&self) -> usize
@@ -85,7 +103,6 @@ impl Trick {
     pub fn get_friend_card(&self, player : usize) -> Option<Card> {
         self.cards[(player+2) % 4]
     }
-
 }
 
 pub fn card_strength(card: &Card, trump_suit: Option<Suit>) -> u64 {

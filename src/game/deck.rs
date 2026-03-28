@@ -1,5 +1,5 @@
 use rand::SeedableRng;
-
+use std::fmt;
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Suit {
     Hearts,
@@ -26,6 +26,39 @@ pub struct Card {
 #[derive(Debug, Clone)]
 pub struct Deck {
     pub cards: Vec<Card>
+}
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.rank, self.suit)
+    }
+}
+
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let r = match self {
+            Rank::Ace   => "A",
+            Rank::King  => "K",
+            Rank::Queen => "Q",
+            Rank::Jack  => "J",
+            Rank::Ten   => "10",
+            Rank::Nine  => "9",
+            Rank::Eight => "8",
+            Rank::Seven => "7",
+        };
+        write!(f, "{}", r)
+    }
+}
+
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Suit::Spades   => "♠",
+            Suit::Hearts   => "♥",
+            Suit::Diamonds => "♦",
+            Suit::Clubs    => "♣",
+        };
+        write!(f, "{}", s)
+    }
 }
 pub fn distribute_hands_from_shuffled_deck(mut deck : Deck) -> [Vec<Card> ; 4]{
     let c = & mut deck.cards;

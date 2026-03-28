@@ -5,9 +5,6 @@ use super::scorer;
 // R1: Must play suit if you have it, otherwise anything else.
 // Hokoom
 // R1: Must always play above a trump if possible.
-pub fn get_new_hand(seed : u64) {
-
-}
 #[derive(Debug, Clone)]
 pub struct GameState {
     // Game meta data
@@ -25,7 +22,23 @@ pub struct GameState {
     pub bidding_team_projects : u64,
     pub other_team_projects : u64,
 }
-
+impl Default for GameState {
+    fn default() -> Self {
+        GameState {
+            previous_tricks: Vec::new(),
+            seed: 42,
+            bidding_team: 0,
+            trump_suit: None,
+            current_player: 0,
+            in_trick: false,
+            current_suit: None,
+            hands: [vec![], vec![], vec![], vec![]],
+            current_trick: Trick::new(0),
+            bidding_team_projects: 0,
+            other_team_projects: 0,
+        }
+    }
+}
 impl GameState {
     pub fn new(
         hands : Option <[Vec<Card> ; 4]>,
@@ -37,16 +50,9 @@ impl GameState {
             Some(hands) => {
                 GameState {
                     hands,
-                    current_trick : Trick::new(0),
-                    previous_tricks : Vec::new(),
-                    bidding_team: 0,
                     trump_suit,
-                    in_trick : false,
                     current_player : match current_player {Some(c) => c,_=>0},
-                    current_suit : None,
-                    seed : 42,
-                    bidding_team_projects : 0,
-                    other_team_projects : 0,
+                    ..GameState::default()
                 }
             }
             _ => { // Manufacture a game
@@ -60,27 +66,21 @@ impl GameState {
                 let current_player = current_player.unwrap_or_else(|| 0);
                 GameState {
                     hands,
-                    current_trick : Trick::new(0),
-                    previous_tricks : Vec::new(),
-                    bidding_team: 0,
                     trump_suit,
-                    in_trick : false,
                     current_player,
-                    current_suit : None,
                     seed : seed.unwrap_or_else(|| 42),
-                    bidding_team_projects : 0,
-                    other_team_projects : 0,
+                    ..GameState::default()
                 }
 
             }
         }
     }
-    pub fn get_new_hands(&mut self) -> [Vec<Card>; 4] {
+    pub fn get_new_hands(&mut self) {
         let seed = self.seed;
         self.seed +=1;
         let mut deck = Deck::new();
         deck.inplace_shuffle(seed);
-        distribute_hands_from_shuffled_deck(deck)
+        self.hands = distribute_hands_from_shuffled_deck(deck)
     }
     pub fn get_player_hand(&self, player : usize) -> &Vec<Card> {
         &self.hands[player]
@@ -179,6 +179,7 @@ impl GameState {
         // Check if trick is done
         if new_state.current_trick.len() == 4 {
             // Move trick to prev_tricks, giving up ownership
+            new_state.current_trick.compute_winner(new_state.trump_suit).expect("wtf");
             new_state.previous_tricks.push(new_state.current_trick);
             new_state.current_trick = Trick::new(0);
             new_state.in_trick = false;
@@ -204,7 +205,20 @@ impl GameState {
             None
         }
     }
-
+    pub fn next_trick_player(&self) -> usize {
+        let n = self.previous_tricks.len();
+        if  n == 0 {
+            0
+        } else {
+            let last = &self.previous_tricks[n - 1];
+            last.get_winner().unwrap_or(0) as usize
+        }
+    }
+    pub fn print_tricks(&self) {
+        for trick in self.previous_tricks.clone() {
+            println!("{trick}")
+        }
+    }
     // TODO: implement early termination if sufficient points collected.
 }
 
@@ -229,22 +243,14 @@ mod tests {
     /// `trick` is ordered by play order (trick[0] led, etc.)
     fn state(
         hand: Vec<Card>,
-
         trump: Option<Suit>,
         in_trick: bool,
     ) -> GameState {
         GameState {
-            bidding_team: 0,
             hands: [hand, vec![], vec![], vec![]],
-            current_trick: Trick::new(0),
-            previous_tricks: vec![],
             trump_suit: trump,
             in_trick,
-            current_player: 0,
-            current_suit: None,
-            seed: 42,
-            other_team_projects: 0,
-            bidding_team_projects : 0
+            ..GameState::default()
         }
     }
 
