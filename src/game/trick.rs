@@ -49,23 +49,27 @@ impl Trick {
             .to_vec()
     }
     // Returns the winner of the trick
-    pub fn winner(&mut self, tsuit : Option<Suit> ) -> Option<u64> {
-        if self.winner != -1 {return Some(self.winner as u64)}
+    pub fn get_winner(&self) -> Option<u64> {
+        if self.winner != -1 { Some(self.winner as u64) }
+        else { None }
+    }
+    fn compute_winner(&mut self, tsuit: Option<Suit>) -> Result<(), &'static str> {
         if self.cards.iter().any(|card| card.is_none()) {
-            print!("Trick in progress, winner has not been decided.");
-            return None;
+            return Err("Trick in progress, winner has not been decided.");
         }
+
         let mut cur_max = 0;
         let mut cur_idx: u64 = 0;
         for i in 0..4 {
-            let cur_score = card_strength(& (self.cards[i].as_ref().unwrap()), tsuit);
+            let cur_score = card_strength(&self.cards[i].as_ref().unwrap(), tsuit);
             if cur_score > cur_max {
                 cur_max = cur_score;
                 cur_idx = i as u64;
             }
         }
+
         self.winner = (cur_idx % 2) as i64;
-        Some(self.winner as u64)
+        Ok(())
     }
     pub fn len(&self) -> usize
     { self.cards.iter().map(|c| if c.is_some() {1} else {0}).sum()}
@@ -218,11 +222,13 @@ mod tests {
     // --- Trick::winner ---
 
     #[test]
+    #[should_panic(expected = "Trick in progress, winner has not been decided.")]
     fn winner_returns_none_when_incomplete() {
         let mut trick = Trick::new(0);
         trick.push(card(Suit::Hearts, Rank::Ace));
         trick.push(card(Suit::Hearts, Rank::King));
-        assert!(trick.winner(None).is_none());
+        trick.compute_winner(None).expect("FUCK");
+        assert!(trick.get_winner().is_none());
     }
 
     #[test]
@@ -233,7 +239,8 @@ mod tests {
         trick.push(card(Suit::Diamonds, Rank::King));
         trick.push(card(Suit::Clubs,    Rank::Queen));
         trick.push(card(Suit::Spades,   Rank::Jack));
-        assert_eq!(trick.winner(None), Some(0));
+        trick.compute_winner(None).expect("TODO: panic message");
+        assert_eq!(trick.get_winner(), Some(0));
     }
 
     #[test]
@@ -244,7 +251,8 @@ mod tests {
         trick.push(card(Suit::Hearts, Rank::Ace));    // slot 1 — off-suit Ace (score 8)
         trick.push(card(Suit::Clubs,  Rank::Ace));    // slot 2 — off-suit Ace (score 8)
         trick.push(card(Suit::Spades, Rank::Nine));   // slot 3 — trump Nine (score 15)
-        assert_eq!(trick.winner(Some(Suit::Spades)), Some(0));
+        trick.compute_winner(Some(Suit::Spades)).expect("ah, why");
+        assert_eq!(trick.get_winner(), Some(0));
     }
 
     #[test]
@@ -255,7 +263,8 @@ mod tests {
         trick.push(card(Suit::Diamonds, Rank::Nine));
         trick.push(card(Suit::Clubs,    Rank::King));
         trick.push(card(Suit::Hearts,   Rank::Queen));
-        assert_eq!(trick.winner(Some(Suit::Diamonds)), Some(1));
+        trick.compute_winner(Some(Suit::Diamonds)).unwrap();
+        assert_eq!(trick.get_winner(), Some(1));
     }
 
     #[test]
@@ -266,6 +275,7 @@ mod tests {
         trick.push(card(Suit::Hearts, Rank::Ace));    // slot 0 — highest
         trick.push(card(Suit::Hearts, Rank::King));   // slot 1
         trick.push(card(Suit::Hearts, Rank::Queen));  // slot 2
-        assert_eq!(trick.winner(None), Some(0));
+        trick.compute_winner(None).expect("TODO: panic message");
+        assert_eq!(trick.get_winner(), Some(0));
     }
 }

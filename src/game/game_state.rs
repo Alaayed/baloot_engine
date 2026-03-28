@@ -70,12 +70,15 @@ impl GameState {
             }
         }
     }
-    pub fn get_new_hand(&mut self) -> [Vec<Card>; 4] {
+    pub fn get_new_hands(&mut self) -> [Vec<Card>; 4] {
         let seed = self.seed;
         self.seed +=1;
         let mut deck = Deck::new();
         deck.inplace_shuffle(seed);
         distribute_hands_from_shuffled_deck(deck)
+    }
+    pub fn get_player_hand(&self, player : usize) -> &Vec<Card> {
+        &self.hands[player]
     }
     pub fn legal_moves (&self, player : usize) -> Vec<bool> {
         let n = self.hands[player].len();
