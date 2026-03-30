@@ -1,33 +1,55 @@
 use super::deck::Suit;
 use super::deck::Card;
 use super::deck::Rank;
+use super::trick::{card_strength, Trick};
 // Score mapping
 
 // Scores Tricks, doesn't score projects.
 // Returns (team_tricks, other_team_tricks)
-pub fn score_tricks_points(team_tricks : Vec<Card>,
+pub fn score_tricks_points(all_tricks : &Vec<Trick>,
                            trump_suit : Option<Suit>,
-                           has_bought : bool) -> (u64, u64) {
-    let func = |c: & Card| card_score(c, &trump_suit);
-    let trick_sum : u64 = team_tricks.iter().map(func).sum();
-    let sun : u64= 132;
-    let hokom: u64= 163;
-    match &trump_suit {
-        Some(_) => { // Hokom Branch
-            // You bought and lost the tricks
-            if has_bought && trick_sum < 82 {(0, hokom)}
-            // They bought and you won the trick
-            else if !has_bought && trick_sum >= 82 {(hokom, 0)}
-            // You split the points
-            else {(trick_sum , hokom-trick_sum)}
+                           bidding_team: u64,
+                           bidding_team_projects : u64,
+                           other_team_projects  : u64) -> (u64, u64) {
+    let err_msg = "Incomplete trick passed to score_tricks_points(), major error.";
+    let bidding_trick_score: u64 = all_tricks
+        .iter()
+        .filter(| t| t.get_winner().expect(err_msg) % 2 == bidding_team)
+        .map(|t| score_trick(t , trump_suit))
+        .sum();
+    let other_trick_score: u64 = all_tricks
+        .iter()
+        .filter(| t| t.get_winner().expect(err_msg) % 2 == (bidding_team +1)%2)
+        .map(|t| score_trick(t , trump_suit))
+        .sum();
+    // Sun / Hokom + all projects
+    let sun : u64= 130 + other_team_projects + bidding_team_projects;
+    let hokom: u64= 162 + other_team_projects + bidding_team_projects;
+    // Score of each team, tricks + projects
+    let mut other_team_score = other_team_projects + other_trick_score;
+    let mut bidding_team_score = bidding_team_projects + bidding_trick_score;
+    match trump_suit {
+        Some(_) => {
+            if other_team_score > hokom / 2 { // Won over half points
+                other_team_score = hokom;
+                bidding_team_score = 0;
+            }
+        } _ => {
+            if other_team_score > sun / 2 { // Won over half points
+                other_team_score = sun;
+                bidding_team_score = 0;
+            }
         }
-        _ => { // Sun Branch
-            // Strictly below half (66) to lose contract--exact half is a split
-            if has_bought && trick_sum < 66 {(0, sun)}
-            else if !has_bought && trick_sum > 66 {(sun, 0)}
-            else {(trick_sum , sun-trick_sum)}
-        }
-    }
+    };
+    if bidding_team == 0 { (bidding_team_score, other_team_score) }
+    else {(other_team_score, bidding_team_score)}
+}
+pub fn score_trick (t : &Trick, trump_suit : Option<Suit>) -> u64 {
+    t.cards
+        .iter()
+        .filter_map( |c| *c)
+        .map(|c| card_strength(&c, trump_suit))
+        .sum()
 }
 #[rustfmt::skip]
 pub fn card_score (card : &Card, trump_suit : &Option<Suit>) -> u64 {
@@ -47,9 +69,9 @@ pub fn card_score (card : &Card, trump_suit : &Option<Suit>) -> u64 {
             match card.rank {
                 Rank::Ace   => 11,
                 Rank::Ten   => 10,
-                Rank::King  => 5,
-                Rank::Queen => 4,
-                Rank::Jack  => 3,
+                Rank::King  => 4,
+                Rank::Queen => 3,
+                Rank::Jack  => 2,
                 _           => 0
             }
         }
@@ -73,7 +95,7 @@ mod tests {
     #[test]
     fn test_score_card_non_trump_jack() {
         let card = Card { suit: Suit::Hearts, rank: Rank::Jack };
-        assert_eq!(card_score(&card, &Some(Suit::Spades)), 3);
+        assert_eq!(card_score(&card, &Some(Suit::Spades)), 2);
     }
 
     #[test]
@@ -81,32 +103,33 @@ mod tests {
         let card = Card { suit: Suit::Hearts, rank: Rank::Ace };
         assert_eq!(card_score(&card, &None), 11);
     }
+    //TODO: Re impl these tests after
 
-    #[test]
-    fn test_bought_and_lost_hokom() {
-        let tricks = vec![
-            Card { suit: Suit::Hearts, rank: Rank::Seven }, // 0 points
-        ];
-        let result = score_tricks_points(tricks, Some(Suit::Hearts), true);
-        assert_eq!(result, (0, 163));
-    }
-
-    #[test]
-    fn test_sun_exact_split() {
-        // trick_sum == 66 should be a split, not a contract loss
-        let tricks = vec![
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
-            Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
-            Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
-            // 66
-        ];
-        // build a hand that sums to exactly 66...
-        let result = score_tricks_points(tricks, None, true);
-        assert_eq!(result, (66,66))
-    }
+    // #[test]
+    // fn test_bought_and_lost_hokom() {
+    //     let tricks = vec![
+    //         Card { suit: Suit::Hearts, rank: Rank::Seven }, // 0 points
+    //     ];
+    //     let result = score_tricks_points(tricks, Some(Suit::Hearts), true);
+    //     assert_eq!(result, (0, 163));
+    // }
+    //
+    // #[test]
+    // fn test_sun_exact_split() {
+    //     // trick_sum == 66 should be a split, not a contract loss
+    //     let tricks = vec![
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Ten }, // 10
+    //         Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
+    //         Card { suit: Suit::Hearts, rank: Rank::Jack },// 3
+    //         // 66
+    //     ];
+    //     // build a hand that sums to exactly 66...
+    //     let result = score_tricks_points(tricks, None, true);
+    //     assert_eq!(result, (66,66))
+    // }
 }

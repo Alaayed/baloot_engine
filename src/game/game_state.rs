@@ -1,41 +1,58 @@
 use crate::game::deck::{distribute_hands_from_shuffled_deck, Card, Deck,Suit};
-use crate::game::trick::card_strength;
-
+use crate::game::trick::{card_strength,Trick};
+use super::scorer;
 // Sun rules
 // R1: Must play suit if you have it, otherwise anything else.
 // Hokoom
 // R1: Must always play above a trump if possible.
+#[derive(Debug, Clone)]
 pub struct GameState {
-    // Card meta data
-    pub hands : [Vec<Card> ; 4],
-    pub current_trick : Vec<Card>,
     // Game meta data
-    pub previous_tricks : Vec<[Card ; 4]>,
-    pub trump_suit : Option <Suit>,
-    pub in_trick : bool,
+    pub previous_tricks : Vec<Trick>,
+    pub seed : u64,
+    // Bid meta data
+    pub bidding_team: usize,
+    pub trump_suit : Option<Suit>,
     // Trick meta data
-    pub current_player : u64,
+    pub current_player : usize,
+    pub in_trick : bool,
     pub current_suit : Option <Suit>,
+    pub hands : [Vec<Card> ; 4],
+    pub current_trick : Trick,
+    pub bidding_team_projects : u64,
+    pub other_team_projects : u64,
 }
-
+impl Default for GameState {
+    fn default() -> Self {
+        GameState {
+            previous_tricks: Vec::new(),
+            seed: 42,
+            bidding_team: 0,
+            trump_suit: None,
+            current_player: 0,
+            in_trick: false,
+            current_suit: None,
+            hands: [vec![], vec![], vec![], vec![]],
+            current_trick: Trick::new(0),
+            bidding_team_projects: 0,
+            other_team_projects: 0,
+        }
+    }
+}
 impl GameState {
     pub fn new(
         hands : Option <[Vec<Card> ; 4]>,
         trump_suit : Option <Suit>,
-        current_player : Option <u64>,
+        current_player : Option <usize>,
         seed : Option<u64>
     ) -> GameState {
-        use crate::game::deck::{Card, };
         match hands { // Start a game
             Some(hands) => {
                 GameState {
-                    hands : hands,
-                    current_trick : Vec::<Card>::new(),
-                    previous_tricks : Vec::new(),
-                    trump_suit : trump_suit,
-                    in_trick : false,
+                    hands,
+                    trump_suit,
                     current_player : match current_player {Some(c) => c,_=>0},
-                    current_suit : None,
+                    ..GameState::default()
                 }
             }
             _ => { // Manufacture a game
@@ -46,53 +63,52 @@ impl GameState {
                 }
                 // Distribute hands
                 let hands = distribute_hands_from_shuffled_deck(deck);
-                let current_player = match current_player {Some(p) => p, None => 0};
+                let current_player = current_player.unwrap_or_else(|| 0);
                 GameState {
-                    hands: hands,
-                    current_trick : Vec::<Card>::new(),
-                    previous_tricks : Vec::new(),
-                    trump_suit : trump_suit,
-                    in_trick : false,
-                    current_player : current_player,
-                    current_suit : None,
+                    hands,
+                    trump_suit,
+                    current_player,
+                    seed : seed.unwrap_or_else(|| 42),
+                    ..GameState::default()
                 }
 
             }
         }
+    }
+    pub fn get_new_hands(&mut self) {
+        let seed = self.seed;
+        self.seed +=1;
+        let mut deck = Deck::new();
+        deck.inplace_shuffle(seed);
+        self.hands = distribute_hands_from_shuffled_deck(deck)
+    }
+    pub fn get_player_hand(&self, player : usize) -> &Vec<Card> {
+        &self.hands[player]
     }
     pub fn legal_moves (&self, player : usize) -> Vec<bool> {
         let n = self.hands[player].len();
         if !self.in_trick { // First move of the trick
             return vec![true ; n];
         }
-
-        let trick_length  =self.current_trick.len();
+        // TODO: Store enemy played and enemy strongest, friend etc since state persists
         let player_cards = &self.hands[player];
         // all enemy related
         // len == 3, enemy = {2,0}, friend {1}
         // len == 2, enemy = {1}  , friend {0}
         // len == 1, enemy = {0}
-        let enemy_team = (trick_length+1) % 2;
-        let enemy_played : Vec::<Card> = self.current_trick
-            .iter()
-            .enumerate() // (index, card)
-            .filter (|(idx, _)| idx % 2 == enemy_team)// Keep enemy cards
-            .map(|(_, card)| *card) // remove indices
-            .collect();
+        let enemy_played : Vec::<Card> = self.current_trick.get_enemy_cards(player);
         let enemy_strongest : u64 = enemy_played
             .iter()
             .map(|c| card_strength(c, self.trump_suit))
             .max()
             .unwrap();
         // teammate related
-        let friend_card =
-            if trick_length > 1
-            {Some(self.current_trick[trick_length-2])}
-            else {None};
+        let friend_card = self.current_trick.get_friend_card(player);
         let friend_won  = friend_card
             .map_or(false, |f| card_strength(&f, self.trump_suit)  > enemy_strongest);
         // All suit related
-        let trick_suit= self.current_trick[0].suit;
+        let trick_suit= self.current_suit.expect("In trick, but no trick suit? \
+        Check apply function for proper init of trick");
         let has_suit  = player_cards.iter().any(|c| c.suit == trick_suit);
         let suit_mask      =  player_cards.iter().map(|c| c.suit == trick_suit).collect();
         let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit)).collect();
@@ -137,8 +153,72 @@ impl GameState {
             }
         }
     }
-    pub fn apply(&self, action: Card) -> Result<GameState, &str> { todo!() }
-    pub fn is_terminal(&self) -> Option<(u64, u64)> { todo!() }
+    // Applies a card played by a player and return the resulting, new, game_state.
+    // Will not enforce legal moves or prevent a player from playing twice.
+    pub fn apply(&self, player :usize , card_idx: usize) -> Result<GameState, &str> {
+        
+        let mut new_state : GameState = (*self).clone();
+        if !new_state.in_trick { // Start Trick
+            // Player just started a new trick
+            // Don't clean up prev state, other codes problem, assume clean state
+            new_state.in_trick = true;
+            // 1. Remove the card and add it to NEW trick
+            let removed_card = new_state.hands[player].swap_remove(card_idx);
+            new_state.current_trick.set_player(player);
+            new_state.current_trick.push(removed_card);
+            // 2. Specify current suit
+            new_state.current_suit = Some(removed_card.suit)
+        } else { // In the middle of current trick
+            // 1. Remove the card and add it to trick
+            let removed_card = new_state.hands[player].swap_remove(card_idx);
+            new_state.current_trick.push(removed_card);
+        }
+        // Now, inc current player
+        new_state.current_player += 1;
+        new_state.current_player %= 4;
+        // Check if trick is done
+        if new_state.current_trick.len() == 4 {
+            // Move trick to prev_tricks, giving up ownership
+            new_state.current_trick.compute_winner(new_state.trump_suit).expect("wtf");
+            new_state.previous_tricks.push(new_state.current_trick);
+            new_state.current_trick = Trick::new(0);
+            new_state.in_trick = false;
+        }
+        Ok(new_state)
+    }
+    pub fn is_terminal(&self) -> Option<(u64, u64)> {
+        let current = scorer::score_tricks_points(
+            &self.previous_tricks,
+            self.trump_suit,
+            self.bidding_team as u64,
+            0,
+            0,
+        );
+        let sun = 130;
+        let hokom = 162;
+        let projects = self.other_team_projects + self.bidding_team_projects;
+        let finished = current.0 + current.1 == (sun+projects)
+            || current.0 + current.1 == (hokom+projects);
+        if finished {
+            Some(current)
+        } else {
+            None
+        }
+    }
+    pub fn next_trick_player(&self) -> usize {
+        let n = self.previous_tricks.len();
+        if  n == 0 {
+            0
+        } else {
+            let last = &self.previous_tricks[n - 1];
+            last.get_winner().unwrap_or(0) as usize
+        }
+    }
+    pub fn print_tricks(&self) {
+        for trick in self.previous_tricks.clone() {
+            println!("{trick}")
+        }
+    }
     // TODO: implement early termination if sufficient points collected.
 }
 
@@ -163,18 +243,14 @@ mod tests {
     /// `trick` is ordered by play order (trick[0] led, etc.)
     fn state(
         hand: Vec<Card>,
-        trick: Vec<Card>,
         trump: Option<Suit>,
         in_trick: bool,
     ) -> GameState {
         GameState {
             hands: [hand, vec![], vec![], vec![]],
-            current_trick: trick,
-            previous_tricks: vec![],
             trump_suit: trump,
             in_trick,
-            current_player: 0,
-            current_suit: None,
+            ..GameState::default()
         }
     }
 
@@ -185,7 +261,6 @@ mod tests {
         // Rule: first player to a trick can play anything
         let s = state(
             vec![c(Suit::Spades, Rank::Ace), c(Suit::Hearts, Rank::Seven)],
-            vec![],
             None,
             false,
         );
@@ -196,7 +271,6 @@ mod tests {
     fn not_in_trick_all_legal_hokom() {
         let s = state(
             vec![c(Suit::Spades, Rank::Ace), c(Suit::Hearts, Rank::Seven)],
-            vec![],
             Some(Suit::Spades),
             false,
         );
@@ -204,46 +278,60 @@ mod tests {
     }
 
     // ─── 2. Sun mode ────────────────────────────────────────────────────────────
+    // For player 0: enemies occupy absolute slots 1 & 3, friend occupies slot 2.
+    // len=1: enemy started (slot 1).
+    // len=2: friend started (slot 2), enemy followed (slot 3).
+    // len=3: enemy started (slot 1), friend (slot 2), enemy (slot 3).
 
     #[test]
     fn sun_has_suit_must_follow() {
-        // R1 Sun: must follow suit if able
-        // trick led with Spades; player has one Spade and one Heart
-        let s = state(
+        // R1 Sun: must follow suit if able.
+        // Friend led Spades (slot 2), enemy played Hearts (slot 3).
+        // Player has one Spade and one Heart → only Spade is legal.
+        let mut s = state(
             vec![c(Suit::Spades, Rank::King), c(Suit::Hearts, Rank::Ace)],
-            vec![c(Suit::Spades, Rank::Seven), c(Suit::Hearts, Rank::Seven)],
             None,
             true,
         );
-        // Only the Spade is legal
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Spades, Rank::Seven)); // slot 2: friend
+        s.current_trick.push(c(Suit::Hearts, Rank::Seven)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, false]);
     }
 
     #[test]
     fn sun_has_suit_all_suit_cards_legal() {
-        // All cards of the led suit are legal (not just highest)
-        let s = state(
+        // All cards of the led suit are legal (not just highest).
+        // Friend led Spades (slot 2), enemy played Hearts (slot 3).
+        let mut s = state(
             vec![
                 c(Suit::Spades, Rank::Seven),
                 c(Suit::Spades, Rank::Ace),
                 c(Suit::Hearts, Rank::Ace),
             ],
-            vec![c(Suit::Spades, Rank::King), c(Suit::Hearts, Rank::Seven)],
             None,
             true,
         );
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Spades, Rank::King));  // slot 2: friend
+        s.current_trick.push(c(Suit::Hearts, Rank::Seven)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, true, false]);
     }
 
     #[test]
     fn sun_no_suit_anything_legal() {
-        // R1 Sun: no suit in hand → anything goes
-        let s = state(
+        // R1 Sun: no suit in hand → anything goes.
+        // Enemy led Spades (slot 1); player has no Spades.
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Ace), c(Suit::Hearts, Rank::King)],
-            vec![c(Suit::Spades, Rank::Seven), c(Suit::Diamonds, Rank::Seven)],
             None,
             true,
         );
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Spades, Rank::Seven)); // slot 1: enemy
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
@@ -251,48 +339,50 @@ mod tests {
 
     #[test]
     fn hokom_trump_trick_must_ascend_if_able() {
-        // Friend plays A♠ (strong trump) to force 9♠ . Player has J♠ (beats it) and K♠...
-        // Use: enemy plays 9♠, player has [J♠, K♠] one beats 9♠ → ascending_mask=[T,F]
-        let s = state(
+        // Friend led A♠ (slot 2), enemy followed with 9♠ (slot 3, strength 15).
+        // Player has [J♠, K♠]: J♠ (16) beats 9♠, K♠ (12) does not → [true, false].
+        let mut s = state(
             vec![c(Suit::Spades, Rank::Jack), c(Suit::Spades, Rank::King)],
-            // trick[0] = enemy (len=2, enemy_team=0, idx%2==0 → trick[0])
-            vec![c(Suit::Spades, Rank::Ace), c(Suit::Spades, Rank::Nine)],
             Some(Suit::Spades),
             true,
         );
-        // Both player cards beat enemy's Seven of trump → must play ascending
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Spades, Rank::Ace));  // slot 2: friend
+        s.current_trick.push(c(Suit::Spades, Rank::Nine)); // slot 3: enemy (strength 15)
         assert_eq!(s.legal_moves(0), vec![true, false]);
     }
 
     #[test]
     fn hokom_trump_trick_cannot_ascend_play_any_trump() {
-        // Enemy played Jack of trump (highest possible). Player has 9♠ and 7♠.
-        // Neither beats Jack → can't ascend → suit_mask = all trumps = [T, T]
-        let s = state(
+        // Friend led 8♠ (slot 2), enemy played J♠ (slot 3, strength 16, highest).
+        // Player has [9♠, 7♠]; neither beats J♠ → suit_mask = all trumps = [true, true].
+        let mut s = state(
             vec![c(Suit::Spades, Rank::Nine), c(Suit::Spades, Rank::Seven)],
-            vec![c(Suit::Spades, Rank::Jack), c(Suit::Spades, Rank::Eight)],
             Some(Suit::Spades),
             true,
         );
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Spades, Rank::Eight)); // slot 2: friend
+        s.current_trick.push(c(Suit::Spades, Rank::Jack));  // slot 3: enemy (strength 16)
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
     #[test]
     fn hokom_trump_trick_friend_winning_play_any_trump() {
-        // trick_length == 3: trick[0]=enemy, trick[1]=friend, trick[2]=enemy
-        // Friend played Jack (strongest), enemies played 7s → friend_won = true
-        // Even though player can ascend, friend already winning → suit_mask
-        let s = state(
+        // Enemy led 7♠ (slot 1), friend played J♠ (slot 2, strongest), enemy played 8♠ (slot 3).
+        // friend_won=true → no need to ascend → suit_mask = all trumps.
+        let mut s = state(
             vec![c(Suit::Spades, Rank::Ace), c(Suit::Spades, Rank::Nine)],
-            vec![
-                c(Suit::Spades, Rank::Seven),  // enemy (idx 0, 0%2==1? len=3 → enemy_team=1)
-                c(Suit::Spades, Rank::Jack),   // friend (idx 1)
-                c(Suit::Spades, Rank::Eight),  // enemy (idx 2)
-            ],
             Some(Suit::Spades),
             true,
         );
-        // friend_won=true → no need to ascend → suit_mask = all trumps
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Spades, Rank::Seven)); // slot 1: enemy
+        s.current_trick.push(c(Suit::Spades, Rank::Jack));  // slot 2: friend (winning)
+        s.current_trick.push(c(Suit::Spades, Rank::Eight)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
@@ -300,132 +390,120 @@ mod tests {
 
     #[test]
     fn hokom_suit_led_has_suit_must_follow() {
-        // Hearts led, trump=Spades. Player has one Heart and one Spade.
-        // Must follow Hearts regardless of trump.
-        let s = state(
+        // Hearts led, trump=Spades. Friend led K♥ (slot 2), enemy played 8♥ (slot 3).
+        // Player has one Heart and one Spade → must follow Hearts.
+        let mut s = state(
             vec![c(Suit::Hearts, Rank::Seven), c(Suit::Spades, Rank::Ace)],
-            vec![c(Suit::Hearts, Rank::King), c(Suit::Hearts, Rank::Eight)],
             Some(Suit::Spades),
             true,
         );
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));  // slot 2: friend
+        s.current_trick.push(c(Suit::Hearts, Rank::Eight)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, false]);
     }
 
     #[test]
     fn hokom_no_suit_enemy_trumped_can_ascend_must_ascend() {
-        // Hearts led. Player has no Hearts. Enemy played a trump (low trump).
-        // Player has a higher trump → must ascend (over-trump).
-        //
-        // trick[1] is enemy (len=2, enemy_team=0 → idx%2==0 → trick[0])
-        // Actually len=2 → enemy_team=0, enemy is trick[0].
-        // trick[0] = Hearts (led by enemy), trick[1] = 7♠ (enemy trumped? No—trick[0] led)
-        //
-        // Restructure: trick[0]=Hearts (led), trick[1]=7♠ (enemy over-trumped)
-        // enemy_team = 2%2 = 0 → enemy = idx%2==0 → trick[0] and trick[2]
-        // But trick[0] is Hearts, not trump. We want enemy_trumped=true.
-        // Use trick length 3: enemy_team=1, enemy=trick[1]
-        // trick[0]=Hearts(led), trick[1]=7♠(enemy trumped), trick[2]=3Hearts(friend no suit)
-        let s = state(
-            vec![c(Suit::Clubs, Rank::Ace), c(Suit::Spades, Rank::Ace)], // no Hearts, has high trump
-            vec![
-                c(Suit::Hearts, Rank::King),   // idx 0: enemy led with a king
-                c(Suit::Hearts, Rank::Ace),  // idx 1: friend played up
-                c(Suit::Spades, Rank::Seven),  // idx 2: enemy trumped with low trump
-            ],
+        // Hearts led. Enemy led K♥ (slot 1), friend played A♥ (slot 2),
+        // enemy trumped with 7♠ (slot 3). Player has no Hearts, holds A♠ which beats 7♠.
+        // → ascending_mask: [A♣=false, A♠=true].
+        let mut s = state(
+            vec![c(Suit::Clubs, Rank::Ace), c(Suit::Spades, Rank::Ace)],
             Some(Suit::Spades),
             true,
         );
-        // enemy_trumped=true, player A♠ > enemy 7♠, friend_won=false
-        // → must play cards that beat enemy's 7♠
-        // A♠ beats 7♠, A♣ does not (not trump)
-        // ascending_mask: [false, true] (A♣ doesn't beat, A♠ beats)
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));   // slot 1: enemy
+        s.current_trick.push(c(Suit::Hearts, Rank::Ace));    // slot 2: friend
+        s.current_trick.push(c(Suit::Spades, Rank::Seven));  // slot 3: enemy trumped
         assert_eq!(s.legal_moves(0), vec![false, true]);
     }
 
     #[test]
     fn hokom_no_suit_enemy_trumped_cannot_ascend_anything_legal() {
-        // Enemy trumped with Jack (highest). Player has no suit, and only low trump.
-        // Can't ascend → anything legal.
-        let s = state(
+        // Hearts led. Enemy led K♥ (slot 1), friend played A♥ (slot 2),
+        // enemy trumped with J♠ (slot 3, highest). Player has no Hearts, only 7♠.
+        // Can't ascend over J♠ → anything legal.
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Ace), c(Suit::Spades, Rank::Seven)],
-            vec![
-                c(Suit::Hearts, Rank::King),
-                c(Suit::Spades, Rank::Jack), // enemy trumped with Jack
-                c(Suit::Hearts, Rank::Eight),
-            ],
             Some(Suit::Spades),
             true,
         );
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));  // slot 1: enemy
+        s.current_trick.push(c(Suit::Hearts, Rank::Ace));   // slot 2: friend
+        s.current_trick.push(c(Suit::Spades, Rank::Jack));  // slot 3: enemy trumped with Jack
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
     #[test]
     fn hokom_no_suit_has_trump_enemy_not_trumped_must_play_trump() {
-        // Hearts led (non-trump). Player has no Hearts. Enemy didn't trump.
-        // Player has trump → must play trump (force opponent to ruff).
-        // trick length 2: enemy_team=0, enemy=trick[0]
-        let s = state(
+        // Hearts led (non-trump). Enemy led K♥ (slot 1), friend played 8♥ (slot 2).
+        // Player has no Hearts, enemy didn't trump → must play trump.
+        // [A♣=false, 7♠=true]
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Ace), c(Suit::Spades, Rank::Seven)],
-            vec![
-                c(Suit::Hearts, Rank::Eight),  // trick[1]: enemy, no trump
-                c(Suit::Hearts, Rank::King),   // trick[0]: friend
-            ],
             Some(Suit::Spades),
             true,
         );
-        // enemy_trumped=false, has_trump=true, friend_won=false → trump_mask
-        // [A♣=false, 7♠=true]
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));  // slot 1: enemy
+        s.current_trick.push(c(Suit::Hearts, Rank::Eight)); // slot 2: friend
         assert_eq!(s.legal_moves(0), vec![false, true]);
     }
 
     #[test]
     fn hokom_no_suit_no_trump_anything_legal() {
-        // Player void in led suit AND has no trump at all → play anything
-        let s = state(
+        // Player void in led suit AND has no trump at all → play anything.
+        // Friend led K♥ (slot 2), enemy played 8♥ (slot 3).
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Ace), c(Suit::Diamonds, Rank::King)],
-            vec![
-                c(Suit::Hearts, Rank::King),
-                c(Suit::Hearts, Rank::Eight),
-            ],
             Some(Suit::Spades),
             true,
         );
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));  // slot 2: friend
+        s.current_trick.push(c(Suit::Hearts, Rank::Eight)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
     #[test]
     fn hokom_no_suit_friend_winning_no_need_to_trump() {
-        // trick_length=3: friend is trick[1], friend winning.
-        // Player has no suit. Even with trump available, friend already winning.
-        // → anything legal (falls through to vec![true; n])
-        let s = state(
+        // Enemy led K♥ (slot 1), friend played A♥ (slot 2, winning), enemy played 7♥ (slot 3).
+        // Player has no suit; friend already winning → anything legal.
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Ace), c(Suit::Spades, Rank::Seven)],
-            vec![
-                c(Suit::Hearts, Rank::King),   // idx 0: enemy (enemy_team=1 → idx%2==1 → trick[1])
-                c(Suit::Hearts, Rank::Ace),    // idx 1: friend (highest non-trump)
-                c(Suit::Hearts, Rank::Seven),  // idx 2: enemy
-            ],
             Some(Suit::Spades),
             true,
         );
-        // friend played A♥ (strongest non-trump), friend_won=true
-        // no suit, friend won → anything legal
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));   // slot 1: enemy
+        s.current_trick.push(c(Suit::Hearts, Rank::Ace));    // slot 2: friend (winning)
+        s.current_trick.push(c(Suit::Hearts, Rank::Seven));  // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true, true]);
     }
 
-    // ─── 5. Bug: panic on trick_length == 1 in hokom ───────────────────────────
+    // ─── 5. Edge case: trick_length == 1 ────────────────────────────────────────
 
     #[test]
     fn bug_trick_length_1_panics_on_unwrap() {
-        // When trick_length==1 (2nd player playing), enemy_team=1,
-        // filter idx%2==1 on [0] → empty enemy_played → .max().unwrap() panics.
-        // This test documents the bug. Fix: handle empty enemy_played gracefully.
-        let s = state(
+        // Enemy led 7♥ (slot 1); player is 2nd to play.
+        // With absolute-slot Trick, enemy_played is non-empty → no panic.
+        let mut s = state(
             vec![c(Suit::Hearts, Rank::Ace)],
-            vec![c(Suit::Hearts, Rank::Seven)], // only 1 card in trick
             Some(Suit::Spades),
             true,
         );
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(1);
+        s.current_trick.push(c(Suit::Hearts, Rank::Seven)); // slot 1: enemy
         assert_eq!(s.legal_moves(0), vec![true]);
     }
 
@@ -433,32 +511,38 @@ mod tests {
 
     #[test]
     fn single_card_hand_always_legal() {
-        // Player has exactly one card — always must play it
-        let s = state(
+        // Player has exactly one card — always must play it.
+        // Friend led K♥ (slot 2), enemy played 8♥ (slot 3). No suit, no trump → [true].
+        let mut s = state(
             vec![c(Suit::Clubs, Rank::Seven)],
-            vec![c(Suit::Hearts, Rank::King), c(Suit::Hearts, Rank::Eight)],
             Some(Suit::Spades),
             true,
         );
-        // No suit, no trump → anything → [true]
+        s.current_suit = Some(Suit::Hearts);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Hearts, Rank::King));  // slot 2: friend
+        s.current_trick.push(c(Suit::Hearts, Rank::Eight)); // slot 3: enemy
         assert_eq!(s.legal_moves(0), vec![true]);
     }
 
     #[test]
     fn hokom_all_cards_are_trump_trump_trick_ascend() {
         // All player cards are trump, trump trick.
-        // Enemy played low trump → all player's cards can ascend
-        let s = state(
+        // Friend led 7♠ (slot 2), enemy played 8♠ (slot 3, strength 10).
+        // All player cards beat 8♠ → ascending_mask = [true, true, true].
+        let mut s = state(
             vec![
                 c(Suit::Spades, Rank::Ace),
                 c(Suit::Spades, Rank::King),
                 c(Suit::Spades, Rank::Nine),
             ],
-            vec![c(Suit::Spades, Rank::Seven), c(Suit::Spades, Rank::Eight)],
             Some(Suit::Spades),
             true,
         );
-        // enemy played 7♠, all player cards beat it
+        s.current_suit = Some(Suit::Spades);
+        s.current_trick.set_player(2);
+        s.current_trick.push(c(Suit::Spades, Rank::Seven)); // slot 2: friend
+        s.current_trick.push(c(Suit::Spades, Rank::Eight)); // slot 3: enemy (strength 10)
         assert_eq!(s.legal_moves(0), vec![true, true, true]);
     }
 
@@ -471,7 +555,7 @@ mod tests {
             c(Suit::Clubs, Rank::Ace),    c(Suit::Clubs, Rank::King),
             c(Suit::Diamonds, Rank::Ace), c(Suit::Diamonds, Rank::King),
         ];
-        let s = state(hand, vec![], None, false);
+        let s = state(hand, None, false);
         assert_eq!(s.legal_moves(0), vec![true; 8]);
     }
 }
