@@ -180,13 +180,16 @@ impl GameState {
         if new_state.current_trick.len() == 4 {
             // Move trick to prev_tricks, giving up ownership
             new_state.current_trick.compute_winner(new_state.trump_suit).expect("wtf");
+            // Get trick winner
+            let trick_player = new_state.current_trick.get_winner().unwrap() as usize;
             new_state.previous_tricks.push(new_state.current_trick);
-            new_state.current_trick = Trick::new(0);
+            new_state.current_trick = Trick::new(trick_player);
+            new_state.current_player = trick_player;
             new_state.in_trick = false;
         }
         Ok(new_state)
     }
-    pub fn is_terminal(&self) -> Option<(u64, u64)> {
+    pub fn is_terminal(&mut self) -> Option<(u64, u64)> {
         let current = scorer::score_tricks_points(
             &self.previous_tricks,
             self.trump_suit,
@@ -194,25 +197,20 @@ impl GameState {
             0,
             0,
         );
-        let sun = 130;
-        let hokom = 162;
+
+        let sun = 120;
+        let hokom = 152;
         let projects = self.other_team_projects + self.bidding_team_projects;
-        let finished = current.0 + current.1 == (sun+projects)
-            || current.0 + current.1 == (hokom+projects);
+        let finished = (current.0 + current.1) == (sun+projects)
+            || (current.0 + current.1) == (hokom+projects);
         if finished {
             Some(current)
         } else {
             None
         }
     }
-    pub fn next_trick_player(&self) -> usize {
-        let n = self.previous_tricks.len();
-        if  n == 0 {
-            0
-        } else {
-            let last = &self.previous_tricks[n - 1];
-            last.get_winner().unwrap_or(0) as usize
-        }
+    pub fn get_current_player(&self) -> usize {
+        self.current_player
     }
     pub fn print_tricks(&self) {
         for trick in self.previous_tricks.clone() {
