@@ -60,8 +60,8 @@ pub fn card_score (card : &Card, trump_suit : &Option<Suit>) -> u64 {
                 Rank::Nine  => 14,
                 Rank::Ace   => 11,
                 Rank::Ten   => 10,
-                Rank::King  => 5,
-                Rank::Queen => 4,
+                Rank::King  => 4,
+                Rank::Queen => 3,
                 _           => 0
             }
         }
