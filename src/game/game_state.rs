@@ -21,6 +21,7 @@ pub struct GameState {
     pub current_trick : Trick,
     pub bidding_team_projects : u64,
     pub other_team_projects : u64,
+    pub score : (u64,u64)
 }
 impl Default for GameState {
     fn default() -> Self {
@@ -36,6 +37,7 @@ impl Default for GameState {
             current_trick: Trick::new(0),
             bidding_team_projects: 0,
             other_team_projects: 0,
+            score : (0,0)
         }
     }
 }
@@ -181,22 +183,26 @@ impl GameState {
             // Move trick to prev_tricks, giving up ownership
             new_state.current_trick.compute_winner(new_state.trump_suit).expect("wtf");
             // Get trick winner
-            let trick_player = new_state.current_trick.get_winner().unwrap() as usize;
+            let trick_winner = new_state.current_trick.get_winner().unwrap() as usize;
+            let trick_score = scorer::score_trick(&new_state.current_trick, new_state.trump_suit);
+            // Maintain running trick score
+            if trick_winner % 2 == 0 {
+                new_state.score.0 += trick_score;
+            } else {
+                new_state.score.1 += trick_score;
+            }
             new_state.previous_tricks.push(new_state.current_trick);
-            new_state.current_trick = Trick::new(trick_player);
-            new_state.current_player = trick_player;
+            new_state.current_trick = Trick::new(trick_winner);
+            new_state.current_player = trick_winner;
             new_state.in_trick = false;
         }
         Ok(new_state)
     }
-    pub fn is_terminal(&mut self) -> Option<(u64, u64)> {
-        let current = scorer::score_tricks_points(
-            &self.previous_tricks,
-            self.trump_suit,
-            self.bidding_team as u64,
-            0,
-            0,
-        );
+    pub fn get_current_scores(&self) -> (u64,u64) {
+        self.score
+    }
+    pub fn is_terminal(&self) -> Option<(u64, u64)> {
+        let current = self.score;
 
         let sun = 120;
         let hokom = 152;
