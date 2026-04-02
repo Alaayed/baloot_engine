@@ -11,8 +11,8 @@ A Rust implementation of the Baloot card game engine. Baloot is a 4-player trick
 
 ## Game Modes
 
-- **Sun (No Trump):** 132 total points, simple suit-following rules
-- **Hokom (Trump):** 163 total points, complex ascending trump requirements
+- **Sun (No Trump):** 130 total points, simple suit-following rules
+- **Hokom (Trump):** 164 total points, complex ascending trump requirements
 
 ## Status
 
