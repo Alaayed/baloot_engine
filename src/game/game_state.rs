@@ -21,6 +21,7 @@ pub struct GameState {
     pub current_trick : Trick,
     pub bidding_team_projects : u64,
     pub other_team_projects : u64,
+    pub score : (u64,u64)
 }
 impl Default for GameState {
     fn default() -> Self {
@@ -36,6 +37,7 @@ impl Default for GameState {
             current_trick: Trick::new(0),
             bidding_team_projects: 0,
             other_team_projects: 0,
+            score : (0,0)
         }
     }
 }
@@ -99,19 +101,19 @@ impl GameState {
         let enemy_played : Vec::<Card> = self.current_trick.get_enemy_cards(player);
         let enemy_strongest : u64 = enemy_played
             .iter()
-            .map(|c| card_strength(c, self.trump_suit))
+            .map(|c| card_strength(c, self.trump_suit, self.current_suit.unwrap()))
             .max()
             .unwrap();
         // teammate related
         let friend_card = self.current_trick.get_friend_card(player);
         let friend_won  = friend_card
-            .map_or(false, |f| card_strength(&f, self.trump_suit)  > enemy_strongest);
+            .map_or(false, |f| card_strength(&f, self.trump_suit, self.current_suit.unwrap())  > enemy_strongest);
         // All suit related
         let trick_suit= self.current_suit.expect("In trick, but no trick suit? \
         Check apply function for proper init of trick");
         let has_suit  = player_cards.iter().any(|c| c.suit == trick_suit);
         let suit_mask      =  player_cards.iter().map(|c| c.suit == trick_suit).collect();
-        let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit)).collect();
+        let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit, self.current_suit.unwrap())).collect();
         // Overriding rule, you must ALWAYS play the suit
         match &self.trump_suit {
             Some(trump) => {
@@ -167,7 +169,8 @@ impl GameState {
             new_state.current_trick.set_player(player);
             new_state.current_trick.push(removed_card);
             // 2. Specify current suit
-            new_state.current_suit = Some(removed_card.suit)
+            new_state.current_suit = Some(removed_card.suit);
+            new_state.current_trick.set_suit(removed_card.suit);
         } else { // In the middle of current trick
             // 1. Remove the card and add it to trick
             let removed_card = new_state.hands[player].swap_remove(card_idx);
@@ -180,39 +183,41 @@ impl GameState {
         if new_state.current_trick.len() == 4 {
             // Move trick to prev_tricks, giving up ownership
             new_state.current_trick.compute_winner(new_state.trump_suit).expect("wtf");
+            // Get trick winner
+            let trick_winner = new_state.current_trick.get_winner().unwrap() as usize;
+            let trick_score = scorer::score_trick(&new_state.current_trick, new_state.trump_suit);
+            // Maintain running trick score
+            if trick_winner % 2 == 0 {
+                new_state.score.0 += trick_score;
+            } else {
+                new_state.score.1 += trick_score;
+            }
             new_state.previous_tricks.push(new_state.current_trick);
-            new_state.current_trick = Trick::new(0);
+            new_state.current_trick = Trick::new(trick_winner);
+            new_state.current_player = trick_winner;
             new_state.in_trick = false;
         }
         Ok(new_state)
     }
+    pub fn get_current_scores(&self) -> (u64,u64) {
+        self.score
+    }
     pub fn is_terminal(&self) -> Option<(u64, u64)> {
-        let current = scorer::score_tricks_points(
-            &self.previous_tricks,
-            self.trump_suit,
-            self.bidding_team as u64,
-            0,
-            0,
-        );
-        let sun = 130;
-        let hokom = 162;
+        let current = self.score;
+
+        let sun = 120;
+        let hokom = 152;
         let projects = self.other_team_projects + self.bidding_team_projects;
-        let finished = current.0 + current.1 == (sun+projects)
-            || current.0 + current.1 == (hokom+projects);
+        let finished = (current.0 + current.1) == (sun+projects)
+            || (current.0 + current.1) == (hokom+projects);
         if finished {
             Some(current)
         } else {
             None
         }
     }
-    pub fn next_trick_player(&self) -> usize {
-        let n = self.previous_tricks.len();
-        if  n == 0 {
-            0
-        } else {
-            let last = &self.previous_tricks[n - 1];
-            last.get_winner().unwrap_or(0) as usize
-        }
+    pub fn get_current_player(&self) -> usize {
+        self.current_player
     }
     pub fn print_tricks(&self) {
         for trick in self.previous_tricks.clone() {

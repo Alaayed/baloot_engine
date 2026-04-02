@@ -1,32 +1,37 @@
 
 pub mod game;
+mod ai;
+
+use std::time::Duration;
+use ai::agent::Agent;
+use ai::random::RandomAgent;
+use ai::alpha_beta::AlphaBeta;
+use game::{game_state::GameState, deck::{Suit}};
 fn main() {
-    stress_tester()
-}
-
-
-fn stress_tester() {
-    let mut gs = game::game_state::GameState::default();
-    use rand::seq::IteratorRandom;
-    gs.get_new_hands();
-    let mut current_player = 0;
-    println!("Running stress tester...");
-    for _i in 0..8 {
-        // Pick a random valid
-        for _ in 0..4 {
-            let valid_moves = gs.legal_moves(current_player);
-            let choose  = valid_moves
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| **v)
-                .map(|(i, _)| i)
-                .choose(&mut rand::rng());
-            gs = gs.apply(current_player , choose.unwrap()).unwrap();
-            current_player +=1;
-            current_player %=4;
-        }
-        current_player = gs.next_trick_player();
+    let mut times = Vec::<Duration>::new();
+    for _ in 0..10 {
+        let start = std::time::Instant::now();
+        dbg!(run_game (Some(100),&AlphaBeta, None, None ));
+        times.push(start.elapsed());
     }
-    gs.print_tricks();
-    println!("YAY")
+    let avg = times.iter().sum::<Duration>() / (times.len()) as u32 ;
+    println!("{:?}", avg);
+}
+fn run_game(seed: Option<u64>, agent : &dyn Agent, trump: Option<Suit>, cp : Option<usize>) -> (u64,u64) {
+    let mut gs = GameState::new(None, trump, cp , seed );
+    let mut i = 1;
+    while gs.is_terminal().is_none() {
+        let cp = gs.get_current_player();
+        let action = agent.choose_action( &gs , cp);
+        //println!("Action Chosen: {i}");
+        i+=1;
+        gs = gs.apply(cp, action).expect("Crashed through legal action");
+    }
+    //gs.print_tricks();
+    gs.is_terminal().expect("Game should be finished")
+}
+fn stress_tester() {
+    for _i in 0..1000 {
+        run_game (None, &RandomAgent, None, None);
+    }
 }

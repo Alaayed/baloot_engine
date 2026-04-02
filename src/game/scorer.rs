@@ -1,7 +1,7 @@
 use super::deck::Suit;
 use super::deck::Card;
 use super::deck::Rank;
-use super::trick::{card_strength, Trick};
+use super::trick::{Trick};
 // Score mapping
 
 // Scores Tricks, doesn't score projects.
@@ -14,17 +14,17 @@ pub fn score_tricks_points(all_tricks : &Vec<Trick>,
     let err_msg = "Incomplete trick passed to score_tricks_points(), major error.";
     let bidding_trick_score: u64 = all_tricks
         .iter()
-        .filter(| t| t.get_winner().expect(err_msg) % 2 == bidding_team)
+        .filter(| t| (t.get_winner().expect(err_msg)) % 2 == bidding_team)
         .map(|t| score_trick(t , trump_suit))
         .sum();
     let other_trick_score: u64 = all_tricks
         .iter()
-        .filter(| t| t.get_winner().expect(err_msg) % 2 == (bidding_team +1)%2)
+        .filter(| t| ((t.get_winner().expect(err_msg)) % 2) == ((bidding_team +1)%2))
         .map(|t| score_trick(t , trump_suit))
         .sum();
     // Sun / Hokom + all projects
-    let sun : u64= 130 + other_team_projects + bidding_team_projects;
-    let hokom: u64= 162 + other_team_projects + bidding_team_projects;
+    let sun : u64= 120 + other_team_projects + bidding_team_projects;
+    let hokom: u64= 152 + other_team_projects + bidding_team_projects;
     // Score of each team, tricks + projects
     let mut other_team_score = other_team_projects + other_trick_score;
     let mut bidding_team_score = bidding_team_projects + bidding_trick_score;
@@ -48,7 +48,7 @@ pub fn score_trick (t : &Trick, trump_suit : Option<Suit>) -> u64 {
     t.cards
         .iter()
         .filter_map( |c| *c)
-        .map(|c| card_strength(&c, trump_suit))
+        .map(|c| card_score(&c, &trump_suit))
         .sum()
 }
 #[rustfmt::skip]
