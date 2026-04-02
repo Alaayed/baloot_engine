@@ -101,19 +101,19 @@ impl GameState {
         let enemy_played : Vec::<Card> = self.current_trick.get_enemy_cards(player);
         let enemy_strongest : u64 = enemy_played
             .iter()
-            .map(|c| card_strength(c, self.trump_suit))
+            .map(|c| card_strength(c, self.trump_suit, self.current_suit.unwrap()))
             .max()
             .unwrap();
         // teammate related
         let friend_card = self.current_trick.get_friend_card(player);
         let friend_won  = friend_card
-            .map_or(false, |f| card_strength(&f, self.trump_suit)  > enemy_strongest);
+            .map_or(false, |f| card_strength(&f, self.trump_suit, self.current_suit.unwrap())  > enemy_strongest);
         // All suit related
         let trick_suit= self.current_suit.expect("In trick, but no trick suit? \
         Check apply function for proper init of trick");
         let has_suit  = player_cards.iter().any(|c| c.suit == trick_suit);
         let suit_mask      =  player_cards.iter().map(|c| c.suit == trick_suit).collect();
-        let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit)).collect();
+        let mapped_cards:Vec<u64>= player_cards.iter().map(|c| card_strength(c, self.trump_suit, self.current_suit.unwrap())).collect();
         // Overriding rule, you must ALWAYS play the suit
         match &self.trump_suit {
             Some(trump) => {
@@ -169,7 +169,8 @@ impl GameState {
             new_state.current_trick.set_player(player);
             new_state.current_trick.push(removed_card);
             // 2. Specify current suit
-            new_state.current_suit = Some(removed_card.suit)
+            new_state.current_suit = Some(removed_card.suit);
+            new_state.current_trick.set_suit(removed_card.suit);
         } else { // In the middle of current trick
             // 1. Remove the card and add it to trick
             let removed_card = new_state.hands[player].swap_remove(card_idx);

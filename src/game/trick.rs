@@ -79,7 +79,9 @@ impl Trick {
         let mut cur_max = 0;
         let mut cur_idx: u64 = 0;
         for i in 0..4 {
-            let cur_score = card_strength(&self.cards[i].as_ref().unwrap(), tsuit);
+            let cur_score = card_strength(&self.cards[i].as_ref().unwrap(), 
+                                          tsuit, 
+                                          self.suit.unwrap());
             if cur_score > cur_max {
                 cur_max = cur_score;
                 cur_idx = i as u64;
@@ -105,7 +107,7 @@ impl Trick {
     }
 }
 
-pub fn card_strength(card: &Card, trump_suit: Option<Suit>) -> u64 {
+pub fn card_strength(card: &Card, trump_suit: Option<Suit>, current_suit : Suit) -> u64 {
 
     match trump_suit {
         Some(trump) if card.suit == trump => {
@@ -121,6 +123,7 @@ pub fn card_strength(card: &Card, trump_suit: Option<Suit>) -> u64 {
             }
         }
         _ => { // Sun
+            if card.suit != current_suit {return 0;}
             match card.rank {
                 Rank::Ace   => 8,
                 Rank::Ten   => 7,
@@ -147,21 +150,21 @@ mod tests {
 
     #[test]
     fn trump_jack_is_highest() {
-        let score = card_strength(&card(Suit::Hearts, Rank::Jack), Some(Suit::Hearts));
+        let score = card_strength(&card(Suit::Hearts, Rank::Jack), Some(Suit::Hearts), Suit::Hearts);
         assert_eq!(score, 16);
     }
 
     #[test]
     fn trump_nine_beats_trump_ace() {
-        let nine  = card_strength(&card(Suit::Hearts, Rank::Nine), Some(Suit::Hearts));
-        let ace   = card_strength(&card(Suit::Hearts, Rank::Ace), Some(Suit::Hearts));
+        let nine  = card_strength(&card(Suit::Hearts, Rank::Nine), Some(Suit::Hearts), Suit::Hearts);
+        let ace   = card_strength(&card(Suit::Hearts, Rank::Ace), Some(Suit::Hearts), Suit::Hearts);
         assert!(nine > ace);
     }
 
     #[test]
     fn trump_order() {
         let trump = Some(Suit::Spades);
-        let s = |r| card_strength(&card(Suit::Spades, r), trump);
+        let s = |r| card_strength(&card(Suit::Spades, r), trump, Suit::Hearts);
         assert!(s(Rank::Jack) > s(Rank::Nine));
         assert!(s(Rank::Nine) > s(Rank::Ace));
         assert!(s(Rank::Ace)  > s(Rank::Ten));
@@ -174,7 +177,7 @@ mod tests {
     #[test]
     fn non_trump_order() {
         let trump = Some(Suit::Clubs);
-        let s = |r| card_strength(&card(Suit::Hearts, r), trump);
+        let s = |r| card_strength(&card(Suit::Hearts, r), trump, Suit::Hearts);
         assert!(s(Rank::Ace)  > s(Rank::Ten));
         assert!(s(Rank::Ten)  > s(Rank::King));
         assert!(s(Rank::King) > s(Rank::Queen));
@@ -187,18 +190,19 @@ mod tests {
     #[test]
     fn trump_beats_non_trump_ace() {
         let trump = Some(Suit::Diamonds);
-        let trump_seven = card_strength(&card(Suit::Diamonds, Rank::Seven), trump);
-        let off_ace     = card_strength(&card(Suit::Hearts, Rank::Ace), trump);
+        let trump_seven = card_strength(&card(Suit::Diamonds, Rank::Seven), trump, Suit::Hearts);
+        let off_ace     = card_strength(&card(Suit::Hearts, Rank::Ace), trump, Suit::Hearts);
         assert!(trump_seven > off_ace);
     }
 
     #[test]
     fn no_trump_all_suits_use_sun_ranking() {
-        let ace_hearts   = card_strength(&card(Suit::Hearts, Rank::Ace), None);
-        let ace_spades   = card_strength(&card(Suit::Spades, Rank::Ace), None);
-        let seven_hearts = card_strength(&card(Suit::Hearts, Rank::Seven), None);
-        assert_eq!(ace_hearts, ace_spades);
+        let ace_hearts   = card_strength(&card(Suit::Hearts, Rank::Ace), None, Suit::Hearts);
+        let ace_spades   = card_strength(&card(Suit::Spades, Rank::Ace), None, Suit::Hearts);
+        let seven_hearts = card_strength(&card(Suit::Hearts, Rank::Seven), None, Suit::Hearts);
+        assert_ne!(ace_hearts, ace_spades);
         assert!(ace_hearts > seven_hearts);
+        assert!(seven_hearts > ace_spades);
     }
 
     // --- Trick::new ---
