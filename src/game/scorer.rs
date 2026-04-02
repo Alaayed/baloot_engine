@@ -11,6 +11,7 @@ pub fn score_tricks_points(all_tricks : &Vec<Trick>,
                            bidding_team: u64,
                            bidding_team_projects : u64,
                            other_team_projects  : u64) -> (u64, u64) {
+    // TODO: Impl last trick winner detection and inc their points by 10
     let err_msg = "Incomplete trick passed to score_tricks_points(), major error.";
     let bidding_trick_score: u64 = all_tricks
         .iter()
