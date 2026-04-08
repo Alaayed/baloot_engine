@@ -9,7 +9,7 @@ use ai::alpha_beta::AlphaBeta;
 use game::{game_state::GameState, deck::{Suit}};
 fn main() {
     let mut times = Vec::<Duration>::new();
-    for _ in 0..10 {
+    for _ in 0..1 {
         let start = std::time::Instant::now();
         dbg!(run_game (Some(100),&AlphaBeta, None, None ));
         times.push(start.elapsed());
@@ -27,7 +27,7 @@ fn run_game(seed: Option<u64>, agent : &dyn Agent, trump: Option<Suit>, cp : Opt
         i+=1;
         gs = gs.apply(cp, action).expect("Crashed through legal action");
     }
-    //gs.print_tricks();
+    gs.print_tricks();
     gs.is_terminal().expect("Game should be finished")
 }
 fn stress_tester() {

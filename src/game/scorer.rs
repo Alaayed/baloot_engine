@@ -29,6 +29,14 @@ pub fn score_tricks_points(all_tricks : &Vec<Trick>,
     // Score of each team, tricks + projects
     let mut other_team_score = other_team_projects + other_trick_score;
     let mut bidding_team_score = bidding_team_projects + bidding_trick_score;
+    if all_tricks.len() == 8 {
+        let last_trick_winner = all_tricks.last().expect(err_msg).get_winner().expect(err_msg);
+        if last_trick_winner == bidding_team {
+            bidding_team_score += 10;
+        } else {
+            other_team_score += 10;
+        }
+    }
     match trump_suit {
         Some(_) => {
             if other_team_score > hokom / 2 { // Won over half points

@@ -192,6 +192,13 @@ impl GameState {
             } else {
                 new_state.score.1 += trick_score;
             }
+            if new_state.previous_tricks.len() == 7 {
+                if trick_winner % 2 == 0  {
+                    new_state.score.0 += 10;
+                } else {
+                    new_state.score.1 += 10;
+                }
+            }
             new_state.previous_tricks.push(new_state.current_trick);
             new_state.current_trick = Trick::new(trick_winner);
             new_state.current_player = trick_winner;
@@ -205,8 +212,8 @@ impl GameState {
     pub fn is_terminal(&self) -> Option<(u64, u64)> {
         let current = self.score;
 
-        let sun = 120;
-        let hokom = 152;
+        let sun = 130;
+        let hokom = 162;
         let projects = self.other_team_projects + self.bidding_team_projects;
         let finished = (current.0 + current.1) == (sun+projects)
             || (current.0 + current.1) == (hokom+projects);

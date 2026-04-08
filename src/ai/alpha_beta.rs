@@ -3,42 +3,10 @@ use crate::game::game_state::GameState;
 use std::cmp::{max, min};
 use rayon::prelude::*;
 pub struct AlphaBeta;
-const DEPTH : usize= 20;
+const DEPTH : usize= 32;
 impl Agent for AlphaBeta{
     fn choose_action(&self, state: &GameState, player_index: usize) -> usize {
-        return parallel_choose_action(state, player_index);
-        let mut best_val : i64= 0;
-        if player_index % 2 == 0 {
-            best_val = -1000
-        } else {
-            best_val = 1000
-        }
-        let mut best_idx : usize = 0;
-        // depth is the number of cards to explore
-        let mut depth :usize = state.hands.iter().map(|c| c.len()).sum();
-        depth = min(depth, 16);
-        // Iterate through all legal moves
-        for (idx, is_legal) in state.legal_moves(player_index)
-            .iter()
-            .enumerate(){
-            if !is_legal {
-                continue;
-            }
-            let ns = state.apply(player_index, idx).unwrap();
-            let ab_val = alpha_beta(&ns, -1000, 1000, depth as i64);
-            if player_index % 2 == 0 {
-                if best_val < ab_val {
-                    best_val = ab_val;
-                    best_idx = idx;
-                }
-            } else {
-                if best_val > ab_val {
-                    best_val = ab_val;
-                    best_idx = idx;
-                }
-            }
-        }
-        best_idx
+        parallel_choose_action(state, player_index)
     }
 }
 fn parallel_choose_action(state: &GameState, player_index: usize) -> usize {
@@ -64,6 +32,7 @@ fn parallel_choose_action(state: &GameState, player_index: usize) -> usize {
         .map(|(idx, _)| idx)
         .unwrap_or(0)
 }
+// TODO: add an aspiration window and parallelize in alpha beta.
 // As seen in https://en.wikipedia.org/wiki/Alpha%E2%80%93beta_pruning#Pseudocode
 fn alpha_beta(state: &GameState,
               mut alpha: i64,
@@ -92,7 +61,7 @@ fn alpha_beta(state: &GameState,
             let new_state = state.apply(player_index, idx).unwrap();
             value = min(value, alpha_beta(&new_state, alpha, beta, depth-1));
             // Break condition
-            if value >= beta {break;}
+            if value <= beta {break;}
             beta = min(beta, value);
         };
     }
