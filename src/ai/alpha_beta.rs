@@ -55,7 +55,7 @@ fn alpha_beta(state: &GameState,
             alpha = max(alpha, value);
         };
     } else {
-            value = 180;
+        value = 180;
         for (idx, is_legal) in state.legal_moves(player_index).iter().enumerate() {
             if !is_legal {continue;}
             let new_state = state.apply(player_index, idx).unwrap();
